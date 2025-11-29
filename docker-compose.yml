@@ -1,0 +1,17 @@
+services:
+  llama-gfx906-swap:
+    image: llama-gfx906-swap
+    container_name: llama-gfx906-swap
+    ports:
+      - "8000:8000"
+      - "5800:5800"
+    volumes:
+      - ~/.cache/llama.cpp:/home/llama/models
+    devices:
+      - /dev/kfd:/dev/kfd
+      - /dev/dri:/dev/dri
+    group_add:
+      - video
+      - render
+    restart: unless-stopped
+

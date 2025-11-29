@@ -1,0 +1,20 @@
+# general
+.git
+.gitignore
+**/__pycache__
+**/.pytest_cache
+**/.mypy_cache
+.DS_Store
+
+# node/go
+node_modules
+dist
+build
+
+# models & caches
+models
+*.gguf
+.cache
+.huggingface
+venv
+.env
