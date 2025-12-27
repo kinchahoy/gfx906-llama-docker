@@ -3,7 +3,7 @@
 ########################
 # Stage 1: build llama-swap (Go)
 ########################
-FROM golang:1.23-bookworm AS swap-builder
+FROM golang:latest AS swap-builder
 WORKDIR /src
 
 RUN --mount=type=cache,target=/var/cache/apt \
