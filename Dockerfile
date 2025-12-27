@@ -37,7 +37,7 @@ ENV LLAMA_HOME=/home/llama \
 
 RUN --mount=type=cache,target=/var/cache/apt \
     apt-get update && \
-    apt-get install -y --no-install-recommends libomp5 ca-certificates curl tini && \
+    apt-get install -y --no-install-recommends libomp5 ca-certificates curl tini libmkl-rt && \
     rm -rf /var/lib/apt/lists/*
 
 # Probably not needed anymore given we run as root
