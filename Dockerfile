@@ -31,6 +31,8 @@ ENV LLAMA_HOME=/home/llama \
     LLAMA_BIN=/home/llama/bin \
     LLAMA_SWAP_CONFIG=/home/llama/services/llama-swap/config.yml \
     PATH=/home/llama/bin:$PATH \
+    # Add LLAMA_BIN to LD_LIBRARY_PATH so the .so files copied into bin/ are found
+    LD_LIBRARY_PATH=/home/llama/bin:$LD_LIBRARY_PATH \
     PORT=8000 \
     LLAMA_EXEC=/home/llama/bin/llama-server \
     LLAMA_OPTS=
