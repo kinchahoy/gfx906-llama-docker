@@ -27,11 +27,11 @@ RUN ls -l /src/build && /src/build/llama-swap-linux-amd64 --version
 ########################
 FROM rocm/llama.cpp:llama.cpp-b6652.amd0_rocm7.0.0_ubuntu24.04_full
 
+# Add LLAMA_BIN to LD_LIBRARY_PATH so the .so files copied into bin/ are found
 ENV LLAMA_HOME=/home/llama \
     LLAMA_BIN=/home/llama/bin \
     LLAMA_SWAP_CONFIG=/home/llama/services/llama-swap/config.yml \
     PATH=/home/llama/bin:$PATH \
-    # Add LLAMA_BIN to LD_LIBRARY_PATH so the .so files copied into bin/ are found
     LD_LIBRARY_PATH=/home/llama/bin:$LD_LIBRARY_PATH \
     PORT=8000 \
     LLAMA_EXEC=/home/llama/bin/llama-server \
