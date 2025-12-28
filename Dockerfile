@@ -28,12 +28,13 @@ RUN ls -l /src/build && /src/build/llama-swap-linux-amd64 --version
 FROM rocm/llama.cpp:llama.cpp-b6652.amd0_rocm7.0.0_ubuntu24.04_full
 
 # Add LLAMA_BIN to LD_LIBRARY_PATH so the .so files copied into bin/ are found
+# Renamed PORT to LLAMA_SERVICE_PORT to avoid conflict with llama-swap's ${PORT} token
 ENV LLAMA_HOME=/home/llama \
     LLAMA_BIN=/home/llama/bin \
     LLAMA_SWAP_CONFIG=/home/llama/services/llama-swap/config.yml \
     PATH=/home/llama/bin:$PATH \
     LD_LIBRARY_PATH=/home/llama/bin:$LD_LIBRARY_PATH \
-    PORT=8000 \
+    LLAMA_SERVICE_PORT=8000 \
     LLAMA_EXEC=/home/llama/bin/llama-server \
     LLAMA_OPTS= \
     HOME=/home/llama
@@ -79,7 +80,7 @@ USER 1000
 WORKDIR /home/llama/work
 
 HEALTHCHECK --interval=30s --timeout=3s --start-period=30s --retries=5 \
-  CMD curl -fsS "http://127.0.0.1:${PORT}/health" || exit 1
+  CMD curl -fsS "http://127.0.0.1:${LLAMA_SERVICE_PORT}/health" || exit 1
 
 ENTRYPOINT ["/usr/bin/tini","--","/home/llama/bin/llama-swap"]
 CMD ["--listen","0.0.0.0:8000","--config","/home/llama/services/llama-swap/config.yml","--","/home/llama/bin/llama-server"]
