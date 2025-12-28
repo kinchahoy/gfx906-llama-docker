@@ -44,10 +44,14 @@ RUN --mount=type=cache,target=/var/cache/apt \
     rm -rf /var/lib/apt/lists/*
 
 # Remove existing ubuntu user if present to free up UID 1000, then create llama user
+# Also add llama user to video and render groups for ROCm device access
 RUN if id -u ubuntu >/dev/null 2>&1; then userdel -r ubuntu; fi && \
     if getent group ubuntu >/dev/null 2>&1; then groupdel ubuntu; fi && \
     groupadd -g 1000 llama && \
     useradd -m -u 1000 -g 1000 -s /bin/bash llama && \
+    usermod -aG video llama && \
+    (getent group render >/dev/null 2>&1 || groupadd render) && \
+    usermod -aG render llama && \
     install -d -o 1000 -g 1000 \
       ${LLAMA_BIN} \
       /home/llama/services/llama-swap \
