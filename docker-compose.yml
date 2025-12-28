@@ -7,6 +7,7 @@ services:
       - "5800:5800"
     volumes:
       - ~/.cache/llama.cpp:/home/llama/models
+      - ./llama-swap-config.yml:/home/llama/services/llama-swap/config.yml
     devices:
       - /dev/kfd:/dev/kfd
       - /dev/dri:/dev/dri
@@ -14,4 +15,3 @@ services:
       - video
       - render
     restart: unless-stopped
-

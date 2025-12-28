@@ -56,7 +56,6 @@ COPY --chown=llama:llama llama.cpp/build/bin/ ${LLAMA_BIN}/
 COPY --from=swap-builder /src/build/llama-swap-linux-amd64 ${LLAMA_BIN}/llama-swap
 RUN chown llama:llama ${LLAMA_BIN}/llama-swap && chmod 0755 ${LLAMA_BIN}/llama-swap
 
-COPY --chown=llama:llama llama-swap-config.yml ${LLAMA_SWAP_CONFIG}
 COPY --chown=root:root rocblas-lib-gfx906/ /opt/rocm/lib/rocblas/library/
 
 # Live as root to simplify gpu visibility
