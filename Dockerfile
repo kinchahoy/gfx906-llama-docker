@@ -43,9 +43,11 @@ RUN --mount=type=cache,target=/var/cache/apt \
     apt-get install -y --no-install-recommends libomp5 ca-certificates curl tini libmkl-rt && \
     rm -rf /var/lib/apt/lists/*
 
-# Create llama user with UID 1000, or use existing if ID 1000 is taken
-RUN if ! getent group 1000; then groupadd -g 1000 llama; else groupadd -f llama; fi && \
-    if ! getent passwd 1000; then useradd -m -u 1000 -g 1000 -s /bin/bash llama; else useradd -m -g 1000 -s /bin/bash llama || true; fi && \
+# Remove existing ubuntu user if present to free up UID 1000, then create llama user
+RUN if id -u ubuntu >/dev/null 2>&1; then userdel -r ubuntu; fi && \
+    if getent group ubuntu >/dev/null 2>&1; then groupdel ubuntu; fi && \
+    groupadd -g 1000 llama && \
+    useradd -m -u 1000 -g 1000 -s /bin/bash llama && \
     install -d -o 1000 -g 1000 \
       ${LLAMA_BIN} \
       /home/llama/services/llama-swap \
