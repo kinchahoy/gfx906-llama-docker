@@ -35,32 +35,34 @@ ENV LLAMA_HOME=/home/llama \
     LD_LIBRARY_PATH=/home/llama/bin:$LD_LIBRARY_PATH \
     PORT=8000 \
     LLAMA_EXEC=/home/llama/bin/llama-server \
-    LLAMA_OPTS=
+    LLAMA_OPTS= \
+    HOME=/home/llama
 
 RUN --mount=type=cache,target=/var/cache/apt \
     apt-get update && \
     apt-get install -y --no-install-recommends libomp5 ca-certificates curl tini libmkl-rt && \
     rm -rf /var/lib/apt/lists/*
 
-# Probably not needed anymore given we run as root
-    RUN useradd -m -u 10001 -s /bin/bash llama && \
+# Create llama user with UID 1000
+RUN groupadd -g 1000 llama && \
+    useradd -m -u 1000 -g llama -s /bin/bash llama && \
     install -d -o llama -g llama \
       ${LLAMA_BIN} \
       /home/llama/services/llama-swap \
       /home/llama/models \
       /home/llama/logs \
-      /home/llama/work
+      /home/llama/work \
+      /home/llama/.cache
 
+# Copy binaries and set ownership
 COPY --chown=llama:llama llama.cpp/build/bin/ ${LLAMA_BIN}/
-# Got to pick the right binary
-COPY --from=swap-builder /src/build/llama-swap-linux-amd64 ${LLAMA_BIN}/llama-swap
-RUN chown llama:llama ${LLAMA_BIN}/llama-swap && chmod 0755 ${LLAMA_BIN}/llama-swap
+COPY --from=swap-builder --chown=llama:llama /src/build/llama-swap-linux-amd64 ${LLAMA_BIN}/llama-swap
+RUN chmod 0755 ${LLAMA_BIN}/llama-swap
 
+# ROCm libraries usually need to stay in /opt/rocm, but we ensure they are readable
 COPY --chown=root:root rocblas-lib-gfx906/ /opt/rocm/lib/rocblas/library/
 
-# Live as root to simplify gpu visibility
-ENV HOME=/root
-
+USER llama
 WORKDIR /home/llama/work
 
 HEALTHCHECK --interval=30s --timeout=3s --start-period=30s --retries=5 \
