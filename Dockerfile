@@ -68,7 +68,9 @@ COPY --from=swap-builder --chown=1000:1000 /src/build/llama-swap-linux-amd64 ${L
 RUN chmod 0755 ${LLAMA_BIN}/llama-swap
 
 # Ensure all files in home are owned by llama
-RUN chown -R 1000:1000 /home/llama
+# Also chown tini as requested
+RUN chown -R 1000:1000 /home/llama && \
+    chown 1000:1000 /usr/bin/tini
 
 # ROCm libraries usually need to stay in /opt/rocm, but we ensure they are readable
 COPY --chown=root:root rocblas-lib-gfx906/ /opt/rocm/lib/rocblas/library/
