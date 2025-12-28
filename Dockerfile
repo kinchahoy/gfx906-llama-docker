@@ -43,10 +43,10 @@ RUN --mount=type=cache,target=/var/cache/apt \
     apt-get install -y --no-install-recommends libomp5 ca-certificates curl tini libmkl-rt && \
     rm -rf /var/lib/apt/lists/*
 
-# Create llama user with UID 1000
-RUN groupadd -g 1000 llama && \
-    useradd -m -u 1000 -g llama -s /bin/bash llama && \
-    install -d -o llama -g llama \
+# Create llama user with UID 1000, or use existing if ID 1000 is taken
+RUN if ! getent group 1000; then groupadd -g 1000 llama; else groupadd -f llama; fi && \
+    if ! getent passwd 1000; then useradd -m -u 1000 -g 1000 -s /bin/bash llama; else useradd -m -g 1000 -s /bin/bash llama || true; fi && \
+    install -d -o 1000 -g 1000 \
       ${LLAMA_BIN} \
       /home/llama/services/llama-swap \
       /home/llama/models \
@@ -55,14 +55,14 @@ RUN groupadd -g 1000 llama && \
       /home/llama/.cache
 
 # Copy binaries and set ownership
-COPY --chown=llama:llama llama.cpp/build/bin/ ${LLAMA_BIN}/
-COPY --from=swap-builder --chown=llama:llama /src/build/llama-swap-linux-amd64 ${LLAMA_BIN}/llama-swap
+COPY --chown=1000:1000 llama.cpp/build/bin/ ${LLAMA_BIN}/
+COPY --from=swap-builder --chown=1000:1000 /src/build/llama-swap-linux-amd64 ${LLAMA_BIN}/llama-swap
 RUN chmod 0755 ${LLAMA_BIN}/llama-swap
 
 # ROCm libraries usually need to stay in /opt/rocm, but we ensure they are readable
 COPY --chown=root:root rocblas-lib-gfx906/ /opt/rocm/lib/rocblas/library/
 
-USER llama
+USER 1000
 WORKDIR /home/llama/work
 
 HEALTHCHECK --interval=30s --timeout=3s --start-period=30s --retries=5 \
