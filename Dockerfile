@@ -41,8 +41,10 @@ ENV LLAMA_HOME=/home/llama \
 
 RUN --mount=type=cache,target=/var/cache/apt \
     apt-get update && \
-    apt-get install -y --no-install-recommends libomp5 ca-certificates curl tini libmkl-rt && \
-    rm -rf /var/lib/apt/lists/*
+    apt-get install -y --no-install-recommends libomp5 libomp-dev ca-certificates curl tini libmkl-rt && \
+    rm -rf /var/lib/apt/lists/* &&  \
+    ln -sf /usr/lib/x86_64-linux-gnu/libomp.so.5 /usr/lib/x86_64-linux-gnu/libomp.so
+    #create a link so libomp is found
 
 # Remove existing ubuntu user if present to free up UID 1000.
 # Re-create render group with GID 992 to match host permissions for /dev/kfd.

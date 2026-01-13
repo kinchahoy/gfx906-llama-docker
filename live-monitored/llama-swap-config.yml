@@ -1,14 +1,17 @@
 models:
+  optimized-oss-120b:
+    cmd: /home/llama/bin/llama-server --port ${PORT} --model /home/llama/models/ggml-org_gpt-oss-120b-GGUF_gpt-oss-120b-mxfp4-00001-of-00003.gguf -ngl 99 -fa 1 -c 100000 --main-gpu 0 -fitt 500 --no-mmap -ts 16,17 --jinja -np 2
+# Optimized for running the llama.cpp-gfx906 variant
   oss-20b-32k:
-    cmd: /home/llama/bin/llama-server --port ${PORT} --model /home/llama/models/ggml-org_gpt-oss-20b-GGUF_gpt-oss-20b-mxfp4.gguf --jinja -c 32000 --fit on --fit-target 2072
-  oss-20b-100k:
-    cmd: /home/llama/bin/llama-server --port ${PORT} --model /home/llama/models/ggml-org_gpt-oss-20b-GGUF_gpt-oss-20b-mxfp4.gguf --jinja -c 100000 --fit on --fit-target 2072
+    cmd: /home/llama/bin/llama-server --port ${PORT} --model /home/llama/models/ggml-org_gpt-oss-20b-GGUF_gpt-oss-20b-mxfp4.gguf --jinja -c 32000 --fit on --fit-target 2072 
+  optimized-oss-20b:
+    cmd: /home/llama/bin/llama-server --port ${PORT} --model /home/llama/models/ggml-org_gpt-oss-20b-GGUF_gpt-oss-20b-mxfp4.gguf --jinja -c 150000 --fit on --fit-target 500 -np 3 -fa 1 --main-gpu 0 --no-mmap
   oss-120b-100k:
-    cmd: /home/llama/bin/llama-server --port ${PORT} --model /home/llama/models/ggml-org_gpt-oss-120b-GGUF_gpt-oss-120b-mxfp4-00001-of-00003.gguf --jinja -c 100000 -ngl 100 -ncmoe 5 --fit on --fit-target 2072 -ts 55,45
+    cmd: /home/llama/bin/llama-server --port ${PORT} --model /home/llama/models/ggml-org_gpt-oss-120b-GGUF_gpt-oss-120b-mxfp4-00001-of-00003.gguf --jinja -c 100000 -ngl 37 -ncmoe 4 --fit on --fit-target 1672 -t 8 -np 4 --mlock
   oss-120b-32k:
     cmd: /home/llama/bin/llama-server --port ${PORT} --model /home/llama/models/ggml-org_gpt-oss-120b-GGUF_gpt-oss-120b-mxfp4-00001-of-00003.gguf --jinja -c 32000 -ngl 100 -ncmoe 5 --fit on --fit-target 2072 -ts 55,45
   gemma-3-27b-it-q4_0:
-    cmd: /home/llama/bin/llama-server --port ${PORT} --model /home/llama/models/google_gemma-3-27b-it-qat-q4_0-gguf_gemma-3-27b-it-q4_0.gguf --jinja -c 8192 --fit on --fit-target 2072
+    cmd: /home/llama/bin/llama-server --port ${PORT} --model /home/llama/models/google_gemma-3-27b-it-qat-q4_0-gguf_gemma-3-27b-it-q4_0.gguf --jinja -c 10000 --fit on --fit-target 2072 -t 8 -ngl 100 --mlock -np 8
   qwen3-30b-thinking-q6_k_xl:
     cmd: /home/llama/bin/llama-server --port ${PORT} --model /home/llama/models/unsloth_Qwen3-30B-A3B-Thinking-2507-GGUF_Qwen3-30B-A3B-Thinking-2507-UD-Q6_K_XL.gguf --jinja -c 32000 --fit on --fit-target 2072
   qwen3-coder-30b-q6_k_xl:
@@ -17,3 +20,6 @@ models:
     cmd: /home/llama/bin/llama-server --port ${PORT} --model /home/llama/models/unsloth_Qwen3-4B-GGUF_Qwen3-4B-Q8_0.gguf --jinja -c 100000 --fit on --fit-target 2072
   qwen3-30b-A3B-GGUFQ4km:
     cmd:  /home/llama/bin/llama-server --port ${PORT} -hf unsloth/Qwen3-30B-A3B-GGUF:Q4_K_M --jinja -c 32000 --fit on --fit-target 2072  -np 4 -t 8
+  oss-120b-100k-ultra:
+    cmd: /home/llama/bin/llama-server --port ${PORT} --model /home/llama/models/ggml-org_gpt-oss-120b-GGUF_gpt-oss-120b-mxfp4-00001-of-00003.gguf --jinja -c 100000 -ncmoe 2 --fit on --fit-target 1672 -t 8 -np 1 -ts 17,17
+    #np=1 so we don't share context slots and use it fully
