@@ -23,3 +23,9 @@ models:
   oss-120b-100k-ultra:
     cmd: /home/llama/bin/llama-server --port ${PORT} --model /home/llama/models/ggml-org_gpt-oss-120b-GGUF_gpt-oss-120b-mxfp4-00001-of-00003.gguf --jinja -c 100000 -ncmoe 2 --fit on --fit-target 1672 -t 8 -np 1 -ts 17,17
     #np=1 so we don't share context slots and use it fully
+  mxfp4-qwen3-80B-code:
+    cmd: /home/llama/bin/llama-server --port ${PORT} -hf unsloth/Qwen3-Coder-Next-GGUF:MXFP4_MOE -ngl 999 -fa 1 -c 100000 --main-gpu 0 -fitt 500 --no-mmap --jinja -np 2 -ts 30,17
+  q4k-m-qwen3-80B-code:
+    cmd: /home/llama/bin/llama-server --port ${PORT} -hf unsloth/Qwen3-Coder-Next-GGUF:Q4_K_M -ngl 999 -fa 1 -c 100000 --main-gpu 0 -fitt 500 --no-mmap --jinja -np 2 -ts 30,17
+  q40-qwen3-80B-code:
+    cmd: /home/llama/bin/llama-server --port ${PORT} -hf unsloth/Qwen3-Coder-Next-GGUF:Q4_0 -ngl 999 -fa 1 -c 100000 --main-gpu 0 -fitt 500 --no-mmap --jinja -np 2 -ts 30,17
