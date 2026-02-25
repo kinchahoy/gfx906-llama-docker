@@ -65,10 +65,21 @@ RUN if id -u ubuntu >/dev/null 2>&1; then userdel -r ubuntu; fi && \
       /home/llama/work \
       /home/llama/.cache
 
-# Copy binaries and set ownership
+# Copy final llama binaries from llama.cpp/build/bin and set ownership
 COPY --chown=1000:1000 llama.cpp/build/bin/ ${LLAMA_BIN}/
 COPY --from=swap-builder --chown=1000:1000 /src/build/llama-swap-linux-amd64 ${LLAMA_BIN}/llama-swap
 RUN chmod 0755 ${LLAMA_BIN}/llama-swap
+
+RUN set -eux; \
+    echo "LLAMA_BIN=${LLAMA_BIN}"; \
+    echo "Contents of ${LLAMA_BIN}:"; \
+    ls -lah "${LLAMA_BIN}"; \
+    echo "llama-swap details:"; \
+    stat "${LLAMA_BIN}/llama-swap"; \
+    file "${LLAMA_BIN}/llama-swap"; \
+    chmod 0755 "${LLAMA_BIN}/llama-swap"; \
+    echo "Post-chmod:"; \
+    ls -lah "${LLAMA_BIN}/llama-swap"
 
 # Ensure all files in home are owned by llama
 # Also chown tini as requested
