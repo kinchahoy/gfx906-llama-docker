@@ -22,7 +22,9 @@ cd rocm-docker-llama
 Clone a `gfx906` optmized version of `llama.cpp` into a directory named `llama.cpp`.
 
 - Ideally use the OG fork that has new capabilities added from time to time: [iacopPBK/llama.cpp-gfx906](https://github.com/iacopPBK/llama.cpp-gfx906)
-- Occasionally I have a more up to date merge of iacopPBK's work with llama.cpp head (e.g. for Qwen 3.5 support as of Feb 2026): [kinchahoy/llama.cpp `gfx906-rebased-2026-02-24`](https://github.com/kinchahoy/llama.cpp/tree/gfx906-rebased-2026-02-24)
+- Occasionally I have a more up to date merge of iacopPBK's work with llama.cpp head
+	- Nemotron 3 super as of 16 March 2026: : [kinchahoy/llama.cpp `gfx906-rebased-2026-03-16`](https://github.com/kinchahoy/llama.cpp/tree/gfx906-rebased-2026-03-16)
+	- Qwen 3.5 support as of Feb 2026: [kinchahoy/llama.cpp `gfx906-rebased-2026-02-24`](https://github.com/kinchahoy/llama.cpp/tree/gfx906-rebased-2026-02-24)
 
 Build the `gfx906` fork (usually `llama.cpp/SCRIPT_compile_MI50.sh` from the forks will work. I assume you've got ROCM 7.1 etc. setup already).
 
