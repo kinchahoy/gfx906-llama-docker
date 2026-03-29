@@ -1,16 +1,12 @@
 models:
   # Naming note: `2x50K`/`1x32K` encodes slot count x per-slot context. This is request concurrency (`-np`), not GPU count.
-  # gpt-oss 120B MXFP4, 2x50K; tuned to fit VRAM with dual parallel queries.
-  gpt-oss-120b-mxfp4-2x50k-tuned:
+  # gpt-oss 120B MXFP4, 2x50K; tuned to fit VRAM with dual parallel queries. Frontier
+  gpt-oss-120b-mxfp4-2x50k-BEST:
     cmd: /home/llama/bin/llama-server --port ${PORT} -hf ggml-org/gpt-oss-120b-GGUF -ngl 99 -fa 1 -c 100000 --main-gpu 0 -fitt 500 --no-mmap -ts 16,17 --jinja -np 2
 
   # gpt-oss 20B MXFP4, 3x150K; tuned long-context profile with flash-attn/no-mmap.
   gpt-oss-20b-mxfp4-3x150k-tuned:
     cmd: /home/llama/bin/llama-server --port ${PORT} -hf ggml-org/gpt-oss-20b-GGUF --jinja -c 150000 --fit on --fit-target 500 -np 3 -fa 1 --main-gpu 0 --no-mmap
-
-  # gpt-oss 120B MXFP4, 1x100K; maximize per-request context with no slot contention.
-  gpt-oss-120b-mxfp4-1x100k:
-    cmd: /home/llama/bin/llama-server --port ${PORT} -hf ggml-org/gpt-oss-120b-GGUF --jinja -c 100000 -ncmoe 2 --fit on --fit-target 1672 -t 8 -np 1 -ts 17,17
 
   # qwen3.5 35B-A3B Q4_K_M, 2x50K; tuned long-context profile for throughput.
   qwen3.5-35b-a3b-q4_k_m-2x50k-tuned:
@@ -20,14 +16,14 @@ models:
   gemma-3-27b-it-q8_0-4x32k:
     cmd: /home/llama/bin/llama-server --port ${PORT} --model /home/llama/models/unsloth_gemma-3-27b-it-GGUF_gemma-3-27b-it-Q8_0.gguf --jinja -c 32000 --fit on --fit-target 2072 -np 4 -t 8
 
-  # gemma-3 27B-it-qat Q6_K, 4x32K; lower-memory variant of the default Gemma serving profile.
-  gemma-3-27b-it-qat-q6_k-4x32k:
-    cmd: /home/llama/bin/llama-server --port ${PORT} --model /home/llama/models/unsloth_gemma-3-27b-it-qat-GGUF_gemma-3-27b-it-qat-Q6_K.gguf --jinja -c 32000 --fit on --fit-target 2072 -np 4 -t 8
-    
-  # qwen3.5 122B-A10B UD-Q3_K_XL, 1x64K; HF-loaded profile aligned with other -hf entries. -fa 0
-  qwen3.5-122b-a10b-q3_k_xl-1x64k:
-    cmd: /home/llama/bin/llama-server --port ${PORT} -hf unsloth/Qwen3.5-122B-A10B-GGUF:UD-Q3_K_XL --jinja -ngl 99 -fa 0  --main-gpu 0 --no-mmap -np 1
+  # Latest GG profile: Nemotron 3 Super 120B-A12B UD-Q3_K_M; prompt/file flags removed from the cli run.
+  nemotron-3-super-120b-a12b-ud-q3_k_m-BEST:
+    cmd: /home/llama/bin/llama-server --port ${PORT} -hf unsloth/NVIDIA-Nemotron-3-Super-120B-A12B-GGUF:UD-Q3_K_M -ngl 999 --no-mmap -fa 1 -fitt 500 -c 250000 -np 1
 
-  # qwen3.5 122B-A10B Q6_K, 1x100K; dual-32GB profile with autofitting putting some layers / MOEs in CPU
-  qwen3.5-122b-a10b-q6_k-1x100k:
-    cmd: /home/llama/bin/llama-server --port ${PORT} -hf unsloth/Qwen3.5-122B-A10B-GGUF:Q6_K --jinja -c 100000 --fit on --fit-target 1500,1000 --no-mmap -t 8 -fa 1 --main-gpu 1
+  # Latest GG profile: Qwen3.5 27B Q8_0; prompt/file flags removed from the cli run.
+  qwen3.5-27b-q8_0-BEST:
+    cmd: /home/llama/bin/llama-server --port ${PORT} -hf unsloth/Qwen3.5-27B-GGUF:Q8_0 -ngl 999 --no-mmap -fa 1 -fitt 500 -c 250000 -np 1
+
+  # Latest GG profile: Qwen3.5 122B-A10B UD-IQ4_XS; prompt/file flags removed from the cli run.
+  qwen3.5-122b-a10b-ud-iq4_xs-BEST:
+    cmd: /home/llama/bin/llama-server --port ${PORT} -hf unsloth/Qwen3.5-122B-A10B-GGUF:UD-IQ4_XS --no-mmap -fa 1 -fitt 2000 -c 250000 -np 1

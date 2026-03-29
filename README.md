@@ -1,4 +1,4 @@
-# rocm-docker-llama
+# gfx906-docker-llama
 
 Run `llama-server` on AMD MI50/MI60 (`gfx906`) using a Docker image that bundles `llama-swap` and patched ROCm `rocblas` Tensile libraries.
 
