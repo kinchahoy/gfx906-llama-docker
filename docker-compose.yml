@@ -1,19 +1,38 @@
+name: gfx906-llama
+
 services:
   gfx906-llama-docker:
-    image: kinchahoy/gfx906-llama-docker
+    image: ${IMAGE_NAME:-kinchahoy/gfx906-llama-docker:latest}
+    pull_policy: never
+    build:
+      context: .
+      additional_contexts:
+        llama_build: ${LLAMA_BUILD_DIR:-/home/raistlin/infer/mx-llama.cpp/build}
+      args:
+        THEROCK_REFRESH: ${THEROCK_REFRESH:-manual}
+        THEROCK_VERSION: ${THEROCK_VERSION:-}
+        LLAMA_BUILD_REVISION: ${LLAMA_BUILD_REVISION:-unknown}
     container_name: gfx906-llama-docker
     user: "1000:1000"
     ports:
-      - "8000:8000"
-      - "5800:5800"
+      - "${LLAMA_PORT:-8000}:8000"
+    environment:
+      HIP_VISIBLE_DEVICES: "${HIP_VISIBLE_DEVICES:-0,1}"
+      GGML_CUDA_ALLREDUCE: "${GGML_CUDA_ALLREDUCE:-internal}"
+      GGML_ENABLE_CUSTOM_AR: "${GGML_ENABLE_CUSTOM_AR:-1}"
+      HSA_FORCE_FINE_GRAIN_PCIE: "${HSA_FORCE_FINE_GRAIN_PCIE:-1}"
+      GGML_CUDA_TP_OVERLAP: "${GGML_CUDA_TP_OVERLAP:-1}"
+      GGML_CUDA_TP_OVERLAP_BF16: "${GGML_CUDA_TP_OVERLAP_BF16:-1}"
     volumes:
-      - ~/.cache/llama.cpp:/home/llama/models
-      - ~/.cache/llama.cpp:/home/llama/.cache/llama.cpp
-      - ./live-monitored/llama-swap-config.yml:/home/llama/services/llama-swap/config.yml
+      - ${HF_CACHE:-/home/raistlin/.cache/huggingface}:/home/llama/.cache/huggingface
+      - ${LLAMA_CACHE:-/home/raistlin/.cache/llama.cpp}:/home/llama/.cache/llama.cpp
+      - ./live-monitored/llama-server-models.ini:/etc/mx-llama/models.ini:ro
     devices:
       - /dev/kfd:/dev/kfd
       - /dev/dri:/dev/dri
     group_add:
-      - video
-      - render
+      - "${VIDEO_GID:-44}"
+      - "${RENDER_GID:-992}"
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped

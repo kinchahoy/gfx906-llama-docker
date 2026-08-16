@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+container_name=${CONTAINER_NAME:-gfx906-llama-docker}
+service_name=${SERVICE_NAME:-gfx906-llama-docker}
+dockge_stack_dir=${DOCKGE_STACK_DIR:-/home/raistlin/docker-space/systemsandinfo/homenet-stacks/mi60-stacks/mi60-llamaswap}
+
+"${repo_root}/scripts/check-model-presets"
+docker compose --project-directory "${repo_root}" -f "${repo_root}/docker-compose.yml" config --quiet
+
+project=""
+if docker inspect "${container_name}" >/dev/null 2>&1; then
+    project=$(docker inspect "${container_name}" --format '{{index .Config.Labels "com.docker.compose.project"}}')
+fi
+
+case "${project}" in
+    mi60-llamaswap)
+        stack_file=${DOCKGE_COMPOSE_FILE:-"${dockge_stack_dir}/compose.yaml"}
+        [[ -r "${stack_file}" ]] || {
+            printf 'Dockge compose file is not readable: %s\n' "${stack_file}" >&2
+            exit 1
+        }
+        docker compose \
+            --project-directory "${dockge_stack_dir}" \
+            -p mi60-llamaswap \
+            -f "${stack_file}" \
+            up -d --force-recreate "${service_name}"
+        ;;
+    ""|gfx906-llama)
+        docker compose \
+            --project-directory "${repo_root}" \
+            -f "${repo_root}/docker-compose.yml" \
+            up -d --force-recreate "${service_name}"
+        ;;
+    *)
+        printf 'Refusing to replace %s owned by unexpected Compose project %s\n' \
+            "${container_name}" "${project}" >&2
+        exit 1
+        ;;
+esac
+
+"${repo_root}/scripts/check-container"

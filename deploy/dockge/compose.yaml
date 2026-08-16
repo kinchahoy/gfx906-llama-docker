@@ -1,0 +1,28 @@
+services:
+  gfx906-llama-docker:
+    image: ${IMAGE_NAME}
+    pull_policy: never
+    container_name: gfx906-llama-docker
+    user: "1000:1000"
+    ports:
+      - "${LLAMA_PORT}:8000"
+    environment:
+      HIP_VISIBLE_DEVICES: "${HIP_VISIBLE_DEVICES}"
+      GGML_CUDA_ALLREDUCE: "${GGML_CUDA_ALLREDUCE}"
+      GGML_ENABLE_CUSTOM_AR: "${GGML_ENABLE_CUSTOM_AR}"
+      HSA_FORCE_FINE_GRAIN_PCIE: "${HSA_FORCE_FINE_GRAIN_PCIE}"
+      GGML_CUDA_TP_OVERLAP: "${GGML_CUDA_TP_OVERLAP}"
+      GGML_CUDA_TP_OVERLAP_BF16: "${GGML_CUDA_TP_OVERLAP_BF16}"
+    volumes:
+      - ${HF_CACHE}:/home/llama/.cache/huggingface
+      - ${LLAMA_CACHE}:/home/llama/.cache/llama.cpp
+      - ${LLAMA_PRESET}:/etc/mx-llama/models.ini:ro
+    devices:
+      - /dev/kfd:/dev/kfd
+      - /dev/dri:/dev/dri
+    group_add:
+      - "${VIDEO_GID}"
+      - "${RENDER_GID}"
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped

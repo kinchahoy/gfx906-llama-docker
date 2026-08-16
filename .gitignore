@@ -1,5 +1,15 @@
 .aider*
 .env
+
+# Raw local benchmark captures stay on the host; commit the run README summaries.
+mi60-inference/runs/**/outcome.txt
+mi60-inference/runs/**/request.json
+mi60-inference/runs/**/response.json
+mi60-inference/runs/**/result.json
+mi60-inference/runs/**/status-before.txt
+mi60-inference/runs/**/status-after.txt
+mi60-inference/runs/**/telemetry.csv
 2025-12-*
 llama.cpp
 llama.cpp/
+.env

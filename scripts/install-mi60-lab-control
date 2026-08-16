@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+
+if (( EUID != 0 )); then
+  printf 'Run with sudo: sudo %s [expiry-minutes]\n' "$0" >&2
+  exit 1
+fi
+
+readonly EXPIRY_MINUTES="${1:-180}"
+[[ "$EXPIRY_MINUTES" =~ ^[0-9]+$ ]] || { printf 'Expiry must be an integer\n' >&2; exit 1; }
+(( EXPIRY_MINUTES >= 10 && EXPIRY_MINUTES <= 480 )) || {
+  printf 'Expiry must be between 10 and 480 minutes\n' >&2
+  exit 1
+}
+
+readonly GRANTEE="${SUDO_USER:-}"
+[[ "$GRANTEE" =~ ^[a-z_][a-z0-9_-]*[$]?$ ]] || {
+  printf 'Could not determine a safe invoking username from SUDO_USER\n' >&2
+  exit 1
+}
+id "$GRANTEE" >/dev/null
+
+readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+readonly REPO_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd)"
+readonly INSTALLED=/usr/local/sbin/mi60-lab-control
+readonly SUDOERS_FILE=/etc/sudoers.d/mi60-lab-control
+readonly BOOT_UNIT=mi60-lab-revoke-on-boot.service
+
+install -o root -g root -m 0755 "$SCRIPT_DIR/mi60-lab-control" "$INSTALLED"
+install -o root -g root -m 0644 "$REPO_DIR/deploy/$BOOT_UNIT" "/etc/systemd/system/$BOOT_UNIT"
+systemctl daemon-reload
+systemctl enable "$BOOT_UNIT" >/dev/null
+
+sudoers_temp="$(mktemp)"
+trap 'rm -f -- "$sudoers_temp"' EXIT
+printf '%s ALL=(root) NOPASSWD: %s\n' "$GRANTEE" "$INSTALLED" > "$sudoers_temp"
+visudo -cf "$sudoers_temp" >/dev/null
+install -o root -g root -m 0440 "$sudoers_temp" "$SUDOERS_FILE"
+visudo -cf "$SUDOERS_FILE" >/dev/null
+
+"$INSTALLED" expire "$EXPIRY_MINUTES"
+"$INSTALLED" status
+printf 'Granted %s narrowly scoped MI60 lab control for at most %s minutes.\n' "$GRANTEE" "$EXPIRY_MINUTES"
+printf 'A reboot also restores defaults and revokes the grant.\n'
+printf 'Revoke early: sudo -n %s revoke\n' "$INSTALLED"

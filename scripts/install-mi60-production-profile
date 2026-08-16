@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+
+if (( EUID != 0 )); then
+  printf 'Run with sudo: sudo %s\n' "$0" >&2
+  exit 1
+fi
+
+readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+readonly REPO_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd)"
+readonly BOOT_SCRIPT=/usr/local/bin/VR-gpu-init.sh
+readonly COOLER_CONFIG=/etc/coolercontrol/config.toml
+readonly CONTROLLER=/usr/local/sbin/mi60-lab-control
+readonly OLD_CURVE='speed_profile = [[0.0, 0], [29.1, 0], [30.1, 0], [31.1, 30], [95.5, 95], [110.0, 100]]'
+readonly NEW_CURVE='speed_profile = [[0.0, 0], [29.1, 0], [30.1, 0], [31.1, 30], [50.0, 40], [60.0, 60], [70.0, 85], [75.0, 96], [110.0, 96]]'
+
+[[ -f "$COOLER_CONFIG" ]] || { printf 'missing %s\n' "$COOLER_CONFIG" >&2; exit 1; }
+[[ -x "$REPO_DIR/deploy/VR-gpu-init.sh" ]] || { printf 'missing executable deploy/VR-gpu-init.sh\n' >&2; exit 1; }
+[[ -x "$SCRIPT_DIR/mi60-lab-control" ]] || { printf 'missing executable scripts/mi60-lab-control\n' >&2; exit 1; }
+
+old_count="$(grep -Fxc -- "$OLD_CURVE" "$COOLER_CONFIG" || true)"
+new_count="$(grep -Fxc -- "$NEW_CURVE" "$COOLER_CONFIG" || true)"
+if (( old_count == 1 && new_count == 0 )); then
+  :
+elif (( old_count == 0 && new_count == 1 )); then
+  printf 'CoolerControl curve is already at the validated production value\n'
+else
+  printf 'refusing to edit unexpected CoolerControl curve (old=%s new=%s)\n' "$old_count" "$new_count" >&2
+  exit 1
+fi
+
+timestamp="$(date +%Y%m%d-%H%M%S)"
+boot_backup="$BOOT_SCRIPT.pre-mi60-210w-$timestamp"
+cooler_backup="$COOLER_CONFIG.pre-mi60-210w-$timestamp"
+install -o root -g root -m 0755 "$BOOT_SCRIPT" "$boot_backup"
+install -o root -g root -m 0644 "$COOLER_CONFIG" "$cooler_backup"
+
+cooler_temp="$(mktemp)"
+trap 'rm -f -- "$cooler_temp"' EXIT
+if (( old_count == 1 )); then
+  awk -v old="$OLD_CURVE" -v new="$NEW_CURVE" '{ if ($0 == old) $0 = new; print }' \
+    "$COOLER_CONFIG" >"$cooler_temp"
+else
+  install -m 0600 "$COOLER_CONFIG" "$cooler_temp"
+fi
+grep -Fqx -- "$NEW_CURVE" "$cooler_temp" || { printf 'failed to construct new curve\n' >&2; exit 1; }
+
+systemctl stop coolercontrold.service
+install -o root -g root -m 0755 "$REPO_DIR/deploy/VR-gpu-init.sh" "$BOOT_SCRIPT"
+install -o root -g root -m 0755 "$SCRIPT_DIR/mi60-lab-control" "$CONTROLLER"
+install -o root -g root -m 0644 "$cooler_temp" "$COOLER_CONFIG"
+
+systemctl restart VR-gpu-setup.service
+systemctl restart coolercontrold.service
+systemctl is-active --quiet coolercontrold.service
+
+grep -Fqx -- 'configure_gpu 0000:03:00.0 210000000' "$BOOT_SCRIPT"
+grep -Fqx -- 'configure_gpu 0000:87:00.0 170000000' "$BOOT_SCRIPT"
+grep -Fqx -- "$NEW_CURVE" "$COOLER_CONFIG"
+
+"$CONTROLLER" revoke
+printf 'Installed production profile: GPU0/GPU1 210/170 W; manifold fan reaches and holds 96%% at 75 C\n'
+printf 'Backups: %s %s\n' "$boot_backup" "$cooler_backup"

@@ -1,57 +1,129 @@
-# gfx906-docker-llama
+# gfx906 mx-llama.cpp container
 
-Run `llama-server` on AMD MI50/MI60 (`gfx906`) using a Docker image that bundles `llama-swap` and patched ROCm `rocblas` Tensile libraries.
+Run a local `mx-llama.cpp` HIP build on MI50/MI60 inside a Docker container. The image installs the latest TheRock nightly runtime for `gfx906`, copies an existing CMake build into the image, and runs `llama-server` in native router mode.
 
-## What This Image Does
+The inference engine and ROCm runtime live in the image. Only model caches and the router preset are mounted from the host, so Docker remains the start, stop, and restart boundary.
 
-- Builds `llama-swap` from source in a build stage.
-- Uses `rocm/llama.cpp` as the ROCM base.
-- Copies the local `llama.cpp/build/bin` binaries into `/home/llama/bin`.
-- Installs `gfx906` rocBLAS library files from `./rocblas-lib-gfx906/` into `/opt/rocm/lib/rocblas/library/`.
-- Starts `llama-swap`, which launches `llama-server` from config (`live-monitored/llama-swap-config.yml`)
+Operational findings, tuning experiments, and the prioritized improvement log
+live in the [`mi60-inference` knowledgebase](mi60-inference/README.md).
 
-## Quick Start
+## Build
 
-Clone this repo:
+The default build directory is `~/infer/mx-llama.cpp/build`:
 
 ```bash
-git clone https://github.com/kinchahoy/rocm-docker-llama
-cd rocm-docker-llama
+./scripts/build-image
 ```
 
-Clone a `gfx906` optmized version of `llama.cpp` into a directory named `llama.cpp`.
-
-- Ideally use the OG fork that has new capabilities added from time to time: [iacopPBK/llama.cpp-gfx906](https://github.com/iacopPBK/llama.cpp-gfx906)
-- Occasionally I have a more up to date merge of iacopPBK's work with llama.cpp head
-	- Nemotron 3 super as of 16 March 2026: : [kinchahoy/llama.cpp `gfx906-rebased-2026-03-16`](https://github.com/kinchahoy/llama.cpp/tree/gfx906-rebased-2026-03-16)
-	- Qwen 3.5 support as of Feb 2026: [kinchahoy/llama.cpp `gfx906-rebased-2026-02-24`](https://github.com/kinchahoy/llama.cpp/tree/gfx906-rebased-2026-02-24)
-
-Build the `gfx906` fork (usually `llama.cpp/SCRIPT_compile_MI50.sh` from the forks will work. I assume you've got ROCM 7.1 etc. setup already).
-
-Then:
-
-1. Edit [`live-monitored/llama-swap-config.yml`](./live-monitored/llama-swap-config.yml) for your models and routes.
-1a. I have GPT-OSS-120B and some Qwen 3.5 models nicely setup for 2x MI50s/60s in there
-
-2. Build and run:
+Point at any other compatible CMake build directory:
 
 ```bash
-docker build -t kinchahoy/llama-gfx906-swap .
+./scripts/build-image ~/infer/another-llama.cpp/build
+```
+
+The directory must contain `CMakeCache.txt` and `bin/llama-server`. The helper rejects builds without HIP and `gfx906`, records the llama.cpp revision in the image, installs the latest TheRock nightly, and verifies the resulting binaries.
+
+Set `THEROCK_VERSION` only when a nightly needs to be rolled back:
+
+```bash
+THEROCK_VERSION=10.1.0a20260807 ./scripts/build-image
+```
+
+Other useful overrides:
+
+```bash
+IMAGE_NAME=my-local/mx-llama:gfx906 ./scripts/build-image /path/to/build
+```
+
+## Run locally
+
+```bash
+cp .env.example .env
 docker compose up -d
+./scripts/check-container
 ```
 
-## Runtime Notes
+The API and Web UI listen on `http://localhost:8000`. Router mode automatically loads the requested preset and keeps at most one model loaded, unloading the least-recently-used model when another is requested.
 
-- API endpoint: `http://localhost:8000`
-- Required GPU devices passed through: `/dev/kfd` and `/dev/dri`.
-- Model/cache mounts are from `~/.cache/llama.cpp`.
-- Llama swap config comes from `live-monitored/llama-swap-config.yml`.
+Model definitions live in [`live-monitored/llama-server-models.ini`](live-monitored/llama-server-models.ini). Requests select a preset through the OpenAI-compatible `model` field.
 
-## Update Cycle
+The live catalog is intentionally limited to Qwen3.8 27B Q8_0 with MTP,
+Gemma 4 31B-it UD-Q5_K_XL with MTP, and the measured GPT-OSS 120B and 20B
+profiles. See [`live-monitored/README.md`](live-monitored/README.md) for the
+model IDs, invariants, and update procedure. Run `./scripts/check-model-presets`
+before recreating the container; it also prevents accidental KV-cache
+quantization.
 
-After recompiling `llama.cpp` binaries, `rocblas-lib-gfx906`, or config:
+Preset edits require container recreation, not merely restart, because an
+atomic editor save can replace the bind-mounted file's inode:
 
 ```bash
-docker build -t kinchahoy/llama-gfx906-swap .
-docker compose up -d
+./scripts/redeploy-container
 ```
+
+The helper detects the Dockge-owned production stack on this host, otherwise
+uses the repository Compose file, then runs the container health check.
+
+`REC-qwen3.8-27b-q8_0-mtp2` mirrors the validated two-MI60 launch in
+`~/infer/QWEN38_GFX906_QUICKSTART.md`: Q8_0, tensor split, direct I/O,
+2048 batch/ubatch, and integrated MTP speculative decoding at depth 2. The
+Docker preset expands the guide's benchmark context to a native 256K total
+pool shared by three parallel request slots. It allocates 261,888 tokens—the
+largest three-way/256-token-aligned value below 262,144—providing 87,296 tokens
+per slot without llama.cpp rounding above the model's native limit. It pins the validated `fe1e2a...`
+GGUF inside the mounted Hugging Face cache, so a moving Hub `main` revision
+cannot silently change production. Its runtime environment enables internal all-reduce and the private
+gfx906 PP2048 overlap optimization. BF16 overlap transport is faster but is a
+small precision tradeoff; set `GGML_CUDA_TP_OVERLAP=0` and
+`GGML_CUDA_TP_OVERLAP_BF16=0` to retain the normal F32 path.
+
+Thinking is enabled by default at `reasoning_effort=medium`, with preserved
+thinking across turns. The preset uses Qwen's thinking-mode samplers:
+temperature 1.0, top-p 0.95, top-k 20, min-p 0, presence penalty 0, and repeat
+penalty 1.0. Clients can still override reasoning effort or disable thinking
+per request through `chat_template_kwargs`.
+
+## Dockge on mi60-server
+
+The live Dockge container exposes port 5005 and mounts this host directory as `/opt/stacks`:
+
+```text
+/home/raistlin/docker-space/systemsandinfo/homenet-stacks/mi60-stacks
+```
+
+The installed stack is:
+
+```text
+mi60-llamaswap/
+  compose.yaml
+  .env
+```
+
+Dockge only controls the already-built local image. It does not need access to `LLAMA_BUILD_DIR`, which may be anywhere on the host. To change inference builds:
+
+1. Run `./scripts/build-image /new/build/directory`.
+2. In Dockge, redeploy the `mi60-llamaswap` stack to recreate the container from the refreshed local image.
+
+The stack uses `pull_policy: never` so Dockge cannot replace the custom local image with a registry image.
+
+## Persistent data
+
+The container mounts:
+
+- `~/.cache/huggingface` at the standard Hugging Face cache location. `--hf-repo`
+  reuses existing snapshots and stores new downloads here.
+- `~/.cache/llama.cpp` at the legacy llama.cpp cache location.
+- The router INI read-only at `/etc/mx-llama/models.ini`.
+
+GPU access is passed through with `/dev/kfd`, `/dev/dri`, video GID 44, and render GID 992.
+
+## Lifecycle
+
+```bash
+docker stop gfx906-llama-docker
+docker start gfx906-llama-docker
+docker restart gfx906-llama-docker
+docker logs -f gfx906-llama-docker
+```
+
+Stopping the container terminates the router and all model workers. Model downloads remain in the host cache.

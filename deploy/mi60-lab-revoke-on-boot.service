@@ -1,0 +1,11 @@
+[Unit]
+Description=Restore MI60 defaults and revoke temporary lab control on boot
+After=VR-gpu-setup.service coolercontrold.service
+ConditionPathExists=/etc/sudoers.d/mi60-lab-control
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/mi60-lab-control revoke
+
+[Install]
+WantedBy=multi-user.target

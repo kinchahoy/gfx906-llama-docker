@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+build_dir=${1:-${LLAMA_BUILD_DIR:-${HOME}/infer/mx-llama.cpp/build}}
+image_name=${IMAGE_NAME:-kinchahoy/gfx906-llama-docker:latest}
+
+if (( $# > 1 )); then
+    printf 'Usage: %s [LLAMA_BUILD_DIR]\n' "$0" >&2
+    exit 2
+fi
+
+build_dir=$(realpath "$build_dir")
+cache_file="${build_dir}/CMakeCache.txt"
+server_bin="${build_dir}/bin/llama-server"
+
+if [[ ! -f "$cache_file" || ! -x "$server_bin" ]]; then
+    printf 'Expected CMakeCache.txt and executable bin/llama-server under %s\n' "$build_dir" >&2
+    exit 1
+fi
+
+require_cache_value() {
+    local pattern=$1
+    local description=$2
+    if ! grep -Eq "$pattern" "$cache_file"; then
+        printf 'Build validation failed: %s\n' "$description" >&2
+        exit 1
+    fi
+}
+
+require_cache_value '^GGML_HIP:BOOL=ON$' 'GGML_HIP must be ON'
+require_cache_value '^(CMAKE_HIP_ARCHITECTURES|AMDGPU_TARGETS|GPU_TARGETS):[^=]*=.*gfx906' 'the HIP target must include gfx906'
+
+source_dir=$(awk -F= '$1 == "CMAKE_HOME_DIRECTORY:INTERNAL" { print $2; exit }' "$cache_file")
+revision=unknown
+if [[ -n "$source_dir" ]] && git -C "$source_dir" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    revision=$(git -C "$source_dir" describe --always --dirty)
+fi
+
+therock_refresh=${THEROCK_REFRESH:-$(date -u +%s)}
+therock_version=${THEROCK_VERSION:-}
+
+printf 'Image:          %s\n' "$image_name"
+printf 'llama build:    %s\n' "$build_dir"
+printf 'llama revision: %s\n' "$revision"
+if [[ -n "$therock_version" ]]; then
+    printf 'TheRock:        %s (pinned)\n' "$therock_version"
+else
+    printf 'TheRock:        latest nightly\n'
+fi
+
+docker buildx build \
+    --load \
+    --tag "$image_name" \
+    --build-context "llama_build=${build_dir}" \
+    --build-arg "LLAMA_BUILD_REVISION=${revision}" \
+    --build-arg "THEROCK_REFRESH=${therock_refresh}" \
+    --build-arg "THEROCK_VERSION=${therock_version}" \
+    "$repo_dir"
+
+printf '\nImage verification:\n'
+docker run --rm --entrypoint /opt/therock/bin/python "$image_name" \
+    -c 'from importlib.metadata import version; print("TheRock", version("rocm"))'
+docker run --rm --entrypoint /opt/mx-llama/bin/llama-server "$image_name" --version

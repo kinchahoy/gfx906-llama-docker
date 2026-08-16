@@ -1,0 +1,160 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+readonly API_URL=http://127.0.0.1:8000/v1/chat/completions
+readonly MODEL=REC-qwen3.8-27b-q8_0-mtp2
+readonly SOURCE_FILE=/home/raistlin/infer/llama.cpp/flake.nix
+# Leave one degree for cancellation latency below the agreed 100 C hard limit.
+readonly CUTOFF_MC=99000
+readonly SEED=424242
+
+die() {
+  printf 'run-matrix-case: %s\n' "$*" >&2
+  exit 1
+}
+
+(( $# == 2 )) || die 'usage: run-matrix-case <pp|pp16|tg|tg768> <output-directory>'
+mode="$1"
+run_dir="$2"
+[[ "$mode" == pp || "$mode" == pp16 || "$mode" == tg || "$mode" == tg768 ]] ||
+  die 'mode must be pp, pp16, tg, or tg768'
+[[ -r "$SOURCE_FILE" ]] || die "cannot read $SOURCE_FILE"
+mkdir "$run_dir"
+
+gpu_hwmon() {
+  local pci="$1"
+  local candidates=(/sys/bus/pci/devices/"$pci"/hwmon/hwmon*)
+  (( ${#candidates[@]} == 1 )) || die "cannot resolve hwmon for $pci"
+  printf '%s\n' "${candidates[0]}"
+}
+
+gpu_drm() {
+  local pci="$1" candidate
+  for candidate in /sys/class/drm/card[0-9]/device; do
+    [[ "$(basename "$(readlink -f "$candidate")")" == "$pci" ]] || continue
+    printf '%s\n' "$candidate"
+    return
+  done
+  die "cannot resolve DRM device for $pci"
+}
+
+fan_hwmon() {
+  local candidate
+  for candidate in /sys/devices/platform/nct6775.656/hwmon/hwmon*; do
+    [[ -r "$candidate/name" ]] || continue
+    [[ "$(<"$candidate/name")" == nct6799 ]] || continue
+    printf '%s\n' "$candidate"
+    return
+  done
+  die 'cannot resolve blower hwmon'
+}
+
+capture_status() {
+  if sudo -n /usr/local/sbin/mi60-lab-control status 2>/dev/null; then
+    return
+  fi
+  printf 'controller_status=unavailable\n'
+  rocm-smi --showmaxpower --csv
+  printf 'manifold_fan_pwm=%s rpm=%s coolercontrol=%s\n' \
+    "$(<"$blower_hwmon/pwm2")" "$(<"$blower_hwmon/fan2_input")" \
+    "$(systemctl is-active coolercontrold.service 2>/dev/null || true)"
+}
+
+gpu0_hwmon="$(gpu_hwmon 0000:03:00.0)"
+gpu1_hwmon="$(gpu_hwmon 0000:87:00.0)"
+gpu0_drm="$(gpu_drm 0000:03:00.0)"
+gpu1_drm="$(gpu_drm 0000:87:00.0)"
+blower_hwmon="$(fan_hwmon)"
+
+gpu0_start="$(<"$gpu0_hwmon/temp2_input")"
+gpu1_start="$(<"$gpu1_hwmon/temp2_input")"
+(( gpu0_start <= 45000 && gpu1_start <= 45000 )) ||
+  die "junction must start at or below 45 C (GPU0=$((gpu0_start / 1000)) C GPU1=$((gpu1_start / 1000)) C)"
+
+capture_status >"$run_dir/status-before.txt"
+
+if [[ "$mode" == pp || "$mode" == pp16 ]]; then
+  repeats=16
+  [[ "$mode" == pp16 ]] && repeats=8
+  jq -n --rawfile src "$SOURCE_FILE" --arg model "$MODEL" --argjson seed "$SEED" --argjson repeats "$repeats" '
+    {
+      model: $model,
+      messages: [{
+        role: "user",
+        content: ("Thermal benchmark. Read the following Nix source repeated for prompt-processing load. Reply with only OK.\n" +
+          (reduce range(0; $repeats) as $n (""; . + $src)))
+      }],
+      max_tokens: 1,
+      temperature: 0.0,
+      seed: $seed,
+      cache_prompt: false,
+      stream: false
+    }
+  ' >"$run_dir/request.json"
+else
+  max_tokens=2048
+  [[ "$mode" == tg768 ]] && max_tokens=768
+  jq -n --rawfile src "$SOURCE_FILE" --arg model "$MODEL" --argjson seed "$SEED" --argjson max_tokens "$max_tokens" '
+    {
+      model: $model,
+      messages: [{
+        role: "user",
+        content: ("Write an exhaustive line-by-line technical review of this Nix flake. Continue until the token limit without concluding early.\n" + $src)
+      }],
+      max_tokens: $max_tokens,
+      temperature: 1.0,
+      seed: $seed,
+      cache_prompt: false,
+      stream: false
+    }
+  ' >"$run_dir/request.json"
+fi
+
+printf '%s\n' 'timestamp,gpu0_edge_mc,gpu0_junction_mc,gpu0_mem_mc,gpu0_sclk_hz,gpu0_mclk_hz,gpu0_power_uw,gpu0_busy_pct,gpu1_edge_mc,gpu1_junction_mc,gpu1_mem_mc,gpu1_sclk_hz,gpu1_mclk_hz,gpu1_power_uw,gpu1_busy_pct,blower_rpm,blower_pwm' >"$run_dir/telemetry.csv"
+
+set +e
+curl --fail-with-body --silent --show-error \
+  -H 'Content-Type: application/json' \
+  --data-binary "@$run_dir/request.json" \
+  --output "$run_dir/response.json" \
+  "$API_URL" &
+curl_pid=$!
+set -e
+
+cutoff=0
+while kill -0 "$curl_pid" 2>/dev/null; do
+  gpu0_junction="$(<"$gpu0_hwmon/temp2_input")"
+  gpu1_junction="$(<"$gpu1_hwmon/temp2_input")"
+  printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' \
+    "$(date +%s.%N)" \
+    "$(<"$gpu0_hwmon/temp1_input")" "$gpu0_junction" "$(<"$gpu0_hwmon/temp3_input")" \
+    "$(<"$gpu0_hwmon/freq1_input")" "$(<"$gpu0_hwmon/freq2_input")" "$(<"$gpu0_hwmon/power1_input")" "$(<"$gpu0_drm/gpu_busy_percent")" \
+    "$(<"$gpu1_hwmon/temp1_input")" "$gpu1_junction" "$(<"$gpu1_hwmon/temp3_input")" \
+    "$(<"$gpu1_hwmon/freq1_input")" "$(<"$gpu1_hwmon/freq2_input")" "$(<"$gpu1_hwmon/power1_input")" "$(<"$gpu1_drm/gpu_busy_percent")" \
+    "$(<"$blower_hwmon/fan2_input")" "$(<"$blower_hwmon/pwm2")" >>"$run_dir/telemetry.csv"
+  if (( gpu0_junction >= CUTOFF_MC || gpu1_junction >= CUTOFF_MC )); then
+    cutoff=1
+    kill "$curl_pid" 2>/dev/null || true
+    break
+  fi
+  sleep 0.2
+done
+
+set +e
+wait "$curl_pid"
+curl_rc=$?
+set -e
+
+capture_status >"$run_dir/status-after.txt"
+if (( cutoff )); then
+  printf 'aborted: 99 C control cutoff reached (100 C hard limit)\n' >"$run_dir/outcome.txt"
+  exit 95
+fi
+if (( curl_rc != 0 )); then
+  printf 'failed: curl exit %s\n' "$curl_rc" >"$run_dir/outcome.txt"
+  exit "$curl_rc"
+fi
+
+printf 'completed\n' >"$run_dir/outcome.txt"
+jq '{usage, timings}' "$run_dir/response.json" >"$run_dir/result.json"
+jq . "$run_dir/result.json"

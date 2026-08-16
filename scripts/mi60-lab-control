@@ -1,0 +1,197 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+
+readonly SELF=/usr/local/sbin/mi60-lab-control
+readonly SUDOERS_FILE=/etc/sudoers.d/mi60-lab-control
+readonly COOLER_SERVICE=coolercontrold.service
+
+die() {
+  printf 'mi60-lab-control: %s\n' "$*" >&2
+  exit 1
+}
+
+require_root() {
+  (( EUID == 0 )) || die 'must run as root (use sudo)'
+}
+
+require_integer() {
+  [[ "$1" =~ ^[0-9]+$ ]] || die "expected an integer, got: $1"
+}
+
+gpu_pci_address() {
+  case "$1" in
+    0) printf '0000:03:00.0\n' ;;
+    1) printf '0000:87:00.0\n' ;;
+    *) die 'GPU must be 0 or 1' ;;
+  esac
+}
+
+gpu_hwmon() {
+  local pci_address
+  pci_address="$(gpu_pci_address "$1")"
+  local candidates=(/sys/bus/pci/devices/"$pci_address"/hwmon/hwmon*)
+  (( ${#candidates[@]} == 1 )) || die "could not uniquely resolve hwmon for GPU $1"
+  [[ -d "${candidates[0]}" ]] || die "hwmon directory is missing for GPU $1"
+  printf '%s\n' "${candidates[0]}"
+}
+
+fan_hwmon() {
+  local candidate
+  for candidate in /sys/devices/platform/nct6775.656/hwmon/hwmon*; do
+    if [[ -r "$candidate/name" && "$(<"$candidate/name")" == nct6799 && -e "$candidate/pwm2" ]]; then
+      printf '%s\n' "$candidate"
+      return
+    fi
+  done
+  die 'could not resolve nct6799 fan2 hwmon'
+}
+
+write_checked() {
+  local value="$1"
+  local target="$2"
+  printf '%s\n' "$value" > "$target"
+  [[ "$(<"$target")" == "$value" ]] || die "failed to set $target to $value"
+}
+
+set_gpu_cap() {
+  local gpu="$1"
+  local watts="$2"
+  require_integer "$watts"
+
+  local minimum maximum
+  case "$gpu" in
+    0) minimum=150; maximum=225 ;;
+    1) minimum=130; maximum=178 ;;
+    *) die 'GPU must be 0 or 1' ;;
+  esac
+  (( watts >= minimum && watts <= maximum )) ||
+    die "GPU $gpu cap must be between $minimum and $maximum W"
+
+  local hwmon
+  hwmon="$(gpu_hwmon "$gpu")"
+  write_checked "$(( watts * 1000000 ))" "$hwmon/power1_cap"
+  printf 'GPU%s power cap: %s W\n' "$gpu" "$watts"
+}
+
+set_fan_fixed() {
+  local percent="$1"
+  require_integer "$percent"
+  (( percent >= 70 && percent <= 100 )) || die 'fixed manifold fan speed must be between 70 and 100 percent'
+
+  systemctl stop "$COOLER_SERVICE"
+  local hwmon pwm
+  hwmon="$(fan_hwmon)"
+  pwm="$(( (percent * 255 + 50) / 100 ))"
+  # CoolerControl can release pwm2 a moment after systemctl reports it stopped.
+  # Retry manual ownership so that late release cannot undo the first write.
+  local attempt
+  for attempt in 1 2 3; do
+    printf '%s\n' 1 >"$hwmon/pwm2_enable"
+    [[ "$(<"$hwmon/pwm2_enable")" == 1 ]] && break
+    sleep 0.2
+  done
+  [[ "$(<"$hwmon/pwm2_enable")" == 1 ]] || die "failed to take manual control of $hwmon/pwm2"
+  write_checked "$pwm" "$hwmon/pwm2"
+  printf 'Shared manifold fan: fixed %s%% (%s/255); CoolerControl stopped\n' "$percent" "$pwm"
+}
+
+restore_fan_profile() {
+  systemctl restart "$COOLER_SERVICE"
+  systemctl is-active --quiet "$COOLER_SERVICE" || die 'CoolerControl did not restart'
+  printf 'Shared manifold fan: CoolerControl profile restored\n'
+}
+
+show_status() {
+  local gpu hwmon cap edge junction memory
+  for gpu in 0 1; do
+    hwmon="$(gpu_hwmon "$gpu")"
+    cap="$(( $(<"$hwmon/power1_cap") / 1000000 ))"
+    edge="$(( $(<"$hwmon/temp1_input") / 1000 ))"
+    junction="$(( $(<"$hwmon/temp2_input") / 1000 ))"
+    memory="$(( $(<"$hwmon/temp3_input") / 1000 ))"
+    printf 'GPU%s cap=%sW edge=%sC junction=%sC memory=%sC\n' "$gpu" "$cap" "$edge" "$junction" "$memory"
+  done
+
+  local hwmon pwm rpm service_state
+  hwmon="$(fan_hwmon)"
+  pwm="$(<"$hwmon/pwm2")"
+  rpm="$(<"$hwmon/fan2_input")"
+  service_state="$(systemctl is-active "$COOLER_SERVICE" 2>/dev/null || true)"
+  printf 'manifold_fan=%s%% rpm=%s coolercontrol=%s\n' "$(( (pwm * 100 + 127) / 255 ))" "$rpm" "$service_state"
+}
+
+restore_defaults() {
+  set_gpu_cap 0 210
+  set_gpu_cap 1 170
+  restore_fan_profile
+}
+
+schedule_expiry() {
+  local minutes="$1"
+  require_integer "$minutes"
+  (( minutes >= 10 && minutes <= 480 )) || die 'expiry must be between 10 and 480 minutes'
+  [[ -x "$SELF" ]] || die "$SELF is not installed"
+
+  local unit="mi60-lab-expire-$(date +%s)"
+  systemd-run --quiet --collect --unit="$unit" --on-active="${minutes}m" "$SELF" revoke
+  printf 'Automatic restore and access revocation scheduled in %s minutes (%s.timer)\n' "$minutes" "$unit"
+}
+
+usage() {
+  cat <<'EOF'
+Usage:
+  mi60-lab-control status
+  mi60-lab-control gpu-cap <0|1> <watts>
+  mi60-lab-control fan-fixed <70-100>
+  mi60-lab-control fan-profile
+  mi60-lab-control restore
+  mi60-lab-control expire <10-480 minutes>
+  mi60-lab-control revoke
+EOF
+}
+
+if [[ "${1:-}" == -h || "${1:-}" == --help || "${1:-}" == help ]]; then
+  usage
+  exit 0
+fi
+
+require_root
+case "${1:-}" in
+  status)
+    (( $# == 1 )) || die 'status takes no arguments'
+    show_status
+    ;;
+  gpu-cap)
+    (( $# == 3 )) || die 'gpu-cap requires GPU and watts'
+    set_gpu_cap "$2" "$3"
+    ;;
+  fan-fixed)
+    (( $# == 2 )) || die 'fan-fixed requires a percentage'
+    set_fan_fixed "$2"
+    ;;
+  fan-profile)
+    (( $# == 1 )) || die 'fan-profile takes no arguments'
+    restore_fan_profile
+    ;;
+  restore)
+    (( $# == 1 )) || die 'restore takes no arguments'
+    restore_defaults
+    ;;
+  expire)
+    (( $# == 2 )) || die 'expire requires minutes'
+    schedule_expiry "$2"
+    ;;
+  revoke)
+    (( $# == 1 )) || die 'revoke takes no arguments'
+    restore_defaults
+    rm -f -- "$SUDOERS_FILE"
+    printf 'Temporary sudo access revoked; installed controller retained\n'
+    ;;
+  *)
+    usage >&2
+    exit 2
+    ;;
+esac

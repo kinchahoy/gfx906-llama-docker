@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+container_name=${CONTAINER_NAME:-gfx906-llama-docker}
+port=${LLAMA_PORT:-8000}
+
+docker inspect "$container_name" --format 'container={{.Name}} image={{.Config.Image}} status={{.State.Status}} health={{if .State.Health}}{{.State.Health.Status}}{{else}}n/a{{end}}'
+docker exec "$container_name" /opt/therock/bin/python \
+    -c 'from importlib.metadata import version; print("TheRock", version("rocm"))'
+docker exec "$container_name" /opt/mx-llama/bin/llama-server --version
+docker exec "$container_name" /opt/mx-llama/bin/llama-server --list-devices
+curl -fsS "http://127.0.0.1:${port}/health"
+printf '\n'
+curl -fsS "http://127.0.0.1:${port}/v1/models" | \
+    python3 -c 'import json, sys; data=json.load(sys.stdin)["data"]; presets=[item for item in data if item.get("source") == "preset"]; cached=[item for item in data if item.get("source") == "cache"]; print(f"configured presets={len(presets)} cached models={len(cached)}"); print("\n".join(item["id"] for item in presets))'

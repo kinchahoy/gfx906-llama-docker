@@ -1,99 +1,95 @@
 # syntax=docker/dockerfile:1.7
 
-########################
-# Stage 1: build llama-swap (Go)
-########################
-FROM golang:latest AS swap-builder
-WORKDIR /src
+FROM ghcr.io/astral-sh/uv:latest AS uv
 
-RUN --mount=type=cache,target=/var/cache/apt \
+FROM ubuntu:26.04
+
+ARG THEROCK_REFRESH=manual
+ARG THEROCK_VERSION=
+ARG LLAMA_BUILD_REVISION=unknown
+
+LABEL org.opencontainers.image.title="gfx906 mx-llama.cpp" \
+      org.opencontainers.image.description="mx-llama.cpp router with TheRock nightly runtime for MI50/MI60" \
+      org.opencontainers.image.revision="${LLAMA_BUILD_REVISION}"
+
+COPY --from=uv /uv /usr/local/bin/uv
+
+RUN rm -f /etc/apt/apt.conf.d/docker-clean && \
+    echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache
+
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    mkdir -p /var/cache/apt/archives/partial && \
     apt-get update && \
-    apt-get install -y --no-install-recommends nodejs npm make ca-certificates git && \
+    apt-get install -y --no-install-recommends \
+      ca-certificates \
+      curl \
+      libomp5 \
+      libssl3t64 \
+      python3 \
+      python3-venv \
+      tini && \
     rm -rf /var/lib/apt/lists/*
 
-ARG LLAMA_SWAP_REF=main
+# THEROCK_REFRESH intentionally invalidates only this layer. The build helper
+# changes it for every build so an unpinned install always checks the nightly index.
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv venv --python /usr/bin/python3 /opt/therock && \
+    if [ -n "${THEROCK_VERSION}" ]; then \
+      therock_spec="rocm[libraries,device-gfx906]==${THEROCK_VERSION}"; \
+    else \
+      therock_spec="rocm[libraries,device-gfx906]"; \
+    fi && \
+    echo "TheRock refresh: ${THEROCK_REFRESH}" && \
+    uv pip install \
+      --python /opt/therock/bin/python \
+      --index-url https://rocm.nightlies.amd.com/whl-multi-arch/ \
+      --prerelease allow \
+      --link-mode copy \
+      --upgrade \
+      "${therock_spec}" && \
+    site_packages="$(/opt/therock/bin/python -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')" && \
+    ln -s "${site_packages}/_rocm_sdk_core" /opt/rocm-core && \
+    ln -s "${site_packages}/_rocm_sdk_libraries" /opt/rocm-libraries && \
+    /opt/therock/bin/python -c 'from importlib.metadata import version; print(version("rocm"))' > /opt/therock/VERSION
 
-RUN --mount=type=cache,target=/go/pkg/mod \
-    --mount=type=cache,target=/root/.cache/go-build \
-    --mount=type=cache,target=/root/.npm \
-    git clone https://github.com/mostlygeek/llama-swap.git . && \
-    git checkout "${LLAMA_SWAP_REF}" && \
-    make clean all
+ENV HOME=/home/llama \
+    PATH=/opt/mx-llama/bin:/opt/rocm-core/bin:/opt/therock/bin:$PATH \
+    LD_LIBRARY_PATH=/opt/mx-llama/bin:/opt/rocm-libraries/lib:/opt/rocm-core/lib:/opt/rocm-core/lib/llvm/lib:/opt/rocm-core/lib/rocm_sysdeps/lib \
+    ROCM_PATH=/opt/rocm-core \
+    HIP_PATH=/opt/rocm-core \
+    HIP_DEVICE_LIB_PATH=/opt/rocm-core/lib/llvm/amdgcn/bitcode \
+    ROCBLAS_USE_HIPBLASLT=0 \
+    HF_HOME=/home/llama/.cache/huggingface
 
-RUN ls -l /src/build && /src/build/llama-swap-linux-amd64 --version
+# llama_build is a BuildKit named context. Point it at any CMake build directory
+# containing bin/ with scripts/build-image or LLAMA_BUILD_DIR in Compose.
+COPY --from=llama_build --chown=1000:1000 /bin/ /opt/mx-llama/bin/
 
-########################
-# Final runtime (starting from the ROCm llama.cpp base, but ignoring it's /app install)
-########################
-FROM rocm/llama.cpp:llama.cpp-b6652.amd0_rocm7.0.0_ubuntu24.04_full
+RUN test -x /opt/mx-llama/bin/llama-server && \
+    ldd /opt/mx-llama/bin/llama-server > /tmp/llama-server.ldd && \
+    ! grep -q 'not found' /tmp/llama-server.ldd && \
+    /opt/mx-llama/bin/llama-server --version && \
+    rm /tmp/llama-server.ldd
 
-# Add LLAMA_BIN to LD_LIBRARY_PATH so the .so files copied into bin/ are found
-# Renamed PORT to LLAMA_SERVICE_PORT to avoid conflict with llama-swap's ${PORT} token
-ENV LLAMA_HOME=/home/llama \
-    LLAMA_BIN=/home/llama/bin \
-    LLAMA_SWAP_CONFIG=/home/llama/services/llama-swap/config.yml \
-    PATH=/home/llama/bin:$PATH \
-    LD_LIBRARY_PATH=/home/llama/bin:$LD_LIBRARY_PATH \
-    LLAMA_SERVICE_PORT=8000 \
-    LLAMA_EXEC=/home/llama/bin/llama-server \
-    LLAMA_OPTS= \
-    HOME=/home/llama
+RUN if getent passwd 1000 >/dev/null; then userdel --remove "$(getent passwd 1000 | cut -d: -f1)"; fi && \
+    if ! getent group video >/dev/null; then groupadd --gid 44 video; fi && \
+    if ! getent group render >/dev/null; then groupadd --gid 992 render; fi && \
+    if getent group 1000 >/dev/null; then \
+      groupmod --new-name llama "$(getent group 1000 | cut -d: -f1)"; \
+    else \
+      groupadd --gid 1000 llama; \
+    fi && \
+    useradd --uid 1000 --gid 1000 --groups video,render --create-home --shell /bin/bash llama && \
+    install -d -o llama -g llama \
+      /home/llama/.cache/huggingface \
+      /home/llama/.cache/llama.cpp
 
-RUN --mount=type=cache,target=/var/cache/apt \
-    apt-get update && \
-    apt-get install -y --no-install-recommends libomp5 libomp-dev ca-certificates curl tini libmkl-rt && \
-    rm -rf /var/lib/apt/lists/* &&  \
-    ln -sf /usr/lib/x86_64-linux-gnu/libomp.so.5 /usr/lib/x86_64-linux-gnu/libomp.so
-    #create a link so libomp is found
+USER llama
+WORKDIR /home/llama
 
-# Remove existing ubuntu user if present to free up UID 1000.
-# Re-create render group with GID 992 to match host permissions for /dev/kfd.
-# Create llama user (UID 1000) and add to video/render.
-RUN if id -u ubuntu >/dev/null 2>&1; then userdel -r ubuntu; fi && \
-    if getent group ubuntu >/dev/null 2>&1; then groupdel ubuntu; fi && \
-    if getent group render >/dev/null 2>&1; then groupdel render; fi && \
-    groupadd -g 992 render && \
-    groupadd -g 1000 llama && \
-    useradd -m -u 1000 -g 1000 -s /bin/bash llama && \
-    usermod -aG video llama && \
-    usermod -aG render llama && \
-    install -d -o 1000 -g 1000 \
-      ${LLAMA_BIN} \
-      /home/llama/services/llama-swap \
-      /home/llama/models \
-      /home/llama/logs \
-      /home/llama/work \
-      /home/llama/.cache
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=5 \
+  CMD curl -fsS http://127.0.0.1:8000/health || exit 1
 
-# Copy final llama binaries from llama.cpp/build/bin and set ownership
-COPY --chown=1000:1000 llama.cpp/build/bin/ ${LLAMA_BIN}/
-COPY --from=swap-builder --chown=1000:1000 /src/build/llama-swap-linux-amd64 ${LLAMA_BIN}/llama-swap
-RUN chmod 0755 ${LLAMA_BIN}/llama-swap
-
-RUN set -eux; \
-    echo "LLAMA_BIN=${LLAMA_BIN}"; \
-    echo "Contents of ${LLAMA_BIN}:"; \
-    ls -lah "${LLAMA_BIN}"; \
-    echo "llama-swap details:"; \
-    stat "${LLAMA_BIN}/llama-swap"; \
-    file "${LLAMA_BIN}/llama-swap"; \
-    chmod 0755 "${LLAMA_BIN}/llama-swap"; \
-    echo "Post-chmod:"; \
-    ls -lah "${LLAMA_BIN}/llama-swap"
-
-# Ensure all files in home are owned by llama
-# Also chown tini as requested
-RUN chown -R 1000:1000 /home/llama && \
-    chown 1000:1000 /usr/bin/tini
-
-# ROCm libraries usually need to stay in /opt/rocm, but we ensure they are readable
-COPY --chown=root:root rocblas-lib-gfx906/ /opt/rocm/lib/rocblas/library/
-
-USER 1000
-WORKDIR /home/llama/work
-
-HEALTHCHECK --interval=30s --timeout=3s --start-period=30s --retries=5 \
-  CMD curl -fsS "http://127.0.0.1:${LLAMA_SERVICE_PORT}/health" || exit 1
-
-ENTRYPOINT ["/usr/bin/tini","--","/home/llama/bin/llama-swap"]
-CMD ["--listen","0.0.0.0:8000","--config","/home/llama/services/llama-swap/config.yml","--","/home/llama/bin/llama-server"]
+ENTRYPOINT ["/usr/bin/tini", "--", "/opt/mx-llama/bin/llama-server"]
+CMD ["--host", "0.0.0.0", "--port", "8000", "--models-preset", "/etc/mx-llama/models.ini", "--models-max", "1", "--models-autoload"]
