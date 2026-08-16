@@ -58,7 +58,8 @@ operator-selected caps exactly.
 - Docker owns the engine and ROCm runtime; stopping the container stops
   inference without losing model downloads.
 - The custom build directory is selectable at image-build time.
-- The Qwen3.8 snapshot is pinned instead of following a moving Hub revision.
+- All live presets use llama.cpp `hf-repo` resolution; direct GGUF paths are
+  reserved for explicitly approved diagnostics.
 - Both cards use tensor split, direct I/O, PP2048 overlap, and BF16 transport.
 - The fan controller watches the maximum edge, junction, and HBM temperature
   across both cards. That sensor selection is correct.

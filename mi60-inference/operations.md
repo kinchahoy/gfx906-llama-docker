@@ -17,6 +17,16 @@ Build a different local engine, then redeploy the stack in Dockge:
 
 ```bash
 ./scripts/build-image /path/to/llama.cpp/build
+./scripts/redeploy-container
+```
+
+Model catalog edits use the same deploy helper. Keep the documented four-model
+catalog, use `hf-repo` rather than direct GGUF paths, and leave KV-cache
+precision native. The helper recreates the owning Dockge stack and runs the
+health/model check:
+
+```bash
+./scripts/redeploy-container
 ```
 
 ## Useful telemetry

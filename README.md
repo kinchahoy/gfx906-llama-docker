@@ -48,11 +48,11 @@ The API and Web UI listen on `http://localhost:8000`. Router mode automatically 
 Model definitions live in [`live-monitored/llama-server-models.ini`](live-monitored/llama-server-models.ini). Requests select a preset through the OpenAI-compatible `model` field.
 
 The live catalog is intentionally limited to Qwen3.8 27B Q8_0 with MTP,
-Gemma 4 31B-it UD-Q5_K_XL with MTP, and the measured GPT-OSS 120B and 20B
+Gemma 4 31B-it Q8_0 with MTP, and the measured GPT-OSS 120B and 20B
 profiles. See [`live-monitored/README.md`](live-monitored/README.md) for the
-model IDs, invariants, and update procedure. Run `./scripts/check-model-presets`
-before recreating the container; it also prevents accidental KV-cache
-quantization.
+model IDs, conventions, and update procedure. Keep every live preset on
+`hf-repo` and leave KV-cache precision native unless the operator explicitly
+approves an exception.
 
 Preset edits require container recreation, not merely restart, because an
 atomic editor save can replace the bind-mounted file's inode:
@@ -65,14 +65,14 @@ The helper detects the Dockge-owned production stack on this host, otherwise
 uses the repository Compose file, then runs the container health check.
 
 `REC-qwen3.8-27b-q8_0-mtp2` mirrors the validated two-MI60 launch in
-`~/infer/QWEN38_GFX906_QUICKSTART.md`: Q8_0, tensor split, direct I/O,
+`~/infer/QWEN38_GFX906_QUICKSTART.md`: Hugging Face Q8_0, tensor split, direct I/O,
 2048 batch/ubatch, and integrated MTP speculative decoding at depth 2. The
 Docker preset expands the guide's benchmark context to a native 256K total
 pool shared by three parallel request slots. It allocates 261,888 tokens—the
 largest three-way/256-token-aligned value below 262,144—providing 87,296 tokens
-per slot without llama.cpp rounding above the model's native limit. It pins the validated `fe1e2a...`
-GGUF inside the mounted Hugging Face cache, so a moving Hub `main` revision
-cannot silently change production. Its runtime environment enables internal all-reduce and the private
+per slot without llama.cpp rounding above the model's native limit. The live
+catalog always uses `hf-repo`; direct model paths and `-m` are prohibited unless
+the operator explicitly approves an exception. Its runtime environment enables internal all-reduce and the private
 gfx906 PP2048 overlap optimization. BF16 overlap transport is faster but is a
 small precision tradeoff; set `GGML_CUDA_TP_OVERLAP=0` and
 `GGML_CUDA_TP_OVERLAP_BF16=0` to retain the normal F32 path.
