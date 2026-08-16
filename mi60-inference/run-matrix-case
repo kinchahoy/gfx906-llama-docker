@@ -2,7 +2,7 @@
 set -euo pipefail
 
 readonly API_URL=http://127.0.0.1:8000/v1/chat/completions
-readonly MODEL=REC-qwen3.8-27b-q8_0-mtp2
+readonly MODEL=qwen3.8-27b-q8_0-mtp2
 readonly SOURCE_FILE=/home/raistlin/infer/llama.cpp/flake.nix
 # Leave one degree for cancellation latency below the agreed 100 C hard limit.
 readonly CUTOFF_MC=99000

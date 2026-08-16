@@ -12,4 +12,4 @@ docker exec "$container_name" /opt/mx-llama/bin/llama-server --list-devices
 curl -fsS "http://127.0.0.1:${port}/health"
 printf '\n'
 curl -fsS "http://127.0.0.1:${port}/v1/models" | \
-    python3 -c 'import json, sys; data=json.load(sys.stdin)["data"]; presets=[item for item in data if item.get("source") == "preset"]; cached=[item for item in data if item.get("source") == "cache"]; print(f"configured presets={len(presets)} cached models={len(cached)}"); print("\n".join(item["id"] for item in presets))'
+    python3 -c 'import json, sys; data=json.load(sys.stdin)["data"]; presets=[item for item in data if item.get("source") == "preset"]; cached=[item for item in data if item.get("source") == "cache"]; print("configured profiles={} unconfigured cache entries={}".format(len(presets), len(cached))); [print("{} aliases={}".format(item["id"], ",".join(item.get("aliases", [])) or "-")) for item in presets]'

@@ -39,6 +39,7 @@ IMAGE_NAME=my-local/mx-llama:gfx906 ./scripts/build-image /path/to/build
 
 ```bash
 cp .env.example .env
+./scripts/prepare-mi60-router-cache
 docker compose up -d
 ./scripts/check-container
 ```
@@ -47,10 +48,11 @@ The API and Web UI listen on `http://localhost:8000`. Router mode automatically 
 
 Model definitions live in [`live-monitored/llama-server-models.ini`](live-monitored/llama-server-models.ini). Requests select a preset through the OpenAI-compatible `model` field.
 
-The live catalog is intentionally limited to Qwen3.8 27B Q8_0 with MTP,
-Gemma 4 31B-it Q8_0 with MTP, and the measured GPT-OSS 120B and 20B
-profiles. See [`live-monitored/README.md`](live-monitored/README.md) for the
-model IDs, conventions, and update procedure. Keep every live preset on
+The live catalog is intentionally limited to four weight sets: Qwen3.8 27B
+Q8_0 with MTP, Gemma 4 31B-it Q8_0 with MTP, and the measured GPT-OSS 120B
+and 20B models. Qwen has medium, xhigh, and no-reasoning profiles, for six
+selectable profiles total. See [`live-monitored/README.md`](live-monitored/README.md)
+for the request IDs, conventions, and update procedure. Keep every profile on
 `hf-repo` and leave KV-cache precision native unless the operator explicitly
 approves an exception.
 
@@ -64,7 +66,7 @@ atomic editor save can replace the bind-mounted file's inode:
 The helper detects the Dockge-owned production stack on this host, otherwise
 uses the repository Compose file, then runs the container health check.
 
-`REC-qwen3.8-27b-q8_0-mtp2` mirrors the validated two-MI60 launch in
+`qwen3.8-27b-q8_0-mtp2` mirrors the validated two-MI60 launch in
 `~/infer/QWEN38_GFX906_QUICKSTART.md`: Hugging Face Q8_0, tensor split, direct I/O,
 2048 batch/ubatch, and integrated MTP speculative decoding at depth 2. The
 Docker preset expands the guide's benchmark context to a native 256K total
@@ -78,10 +80,16 @@ small precision tradeoff; set `GGML_CUDA_TP_OVERLAP=0` and
 `GGML_CUDA_TP_OVERLAP_BF16=0` to retain the normal F32 path.
 
 Thinking is enabled by default at `reasoning_effort=medium`, with preserved
-thinking across turns. The preset uses Qwen's thinking-mode samplers:
+thinking across turns. Separate xhigh and no-reasoning profiles are available.
+The medium and xhigh profiles use Qwen's thinking-mode samplers:
 temperature 1.0, top-p 0.95, top-k 20, min-p 0, presence penalty 0, and repeat
-penalty 1.0. Clients can still override reasoning effort or disable thinking
-per request through `chat_template_kwargs`.
+penalty 1.0. Clients can override medium with
+`chat_template_kwargs.reasoning_effort=xhigh` without changing profiles.
+
+Gemma keeps the same Q8/tensor-parallel/MTP/three-slot approach, with a tested
+235,008-token pool and its mmproj enabled on CPU. Those two fit adjustments are
+required because Gemma's larger target, MTP sidecar, and GPU projector do not
+fit together at Qwen's 261,888-token envelope with native-precision KV.
 
 ## Dockge on mi60-server
 
@@ -110,8 +118,9 @@ The stack uses `pull_policy: never` so Dockge cannot replace the custom local im
 
 The container mounts:
 
-- `~/.cache/huggingface` at the standard Hugging Face cache location. `--hf-repo`
-  reuses existing snapshots and stores new downloads here.
+- `~/.cache/huggingface` read-only at the standard Hugging Face cache location.
+  The router scans only its curated `mi60-router` subdirectory and runs offline,
+  so experimental cache entries are hidden and requests cannot download.
 - `~/.cache/llama.cpp` at the legacy llama.cpp cache location.
 - The router INI read-only at `/etc/mx-llama/models.ini`.
 

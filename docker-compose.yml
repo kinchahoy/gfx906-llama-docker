@@ -23,8 +23,10 @@ services:
       HSA_FORCE_FINE_GRAIN_PCIE: "${HSA_FORCE_FINE_GRAIN_PCIE:-1}"
       GGML_CUDA_TP_OVERLAP: "${GGML_CUDA_TP_OVERLAP:-1}"
       GGML_CUDA_TP_OVERLAP_BF16: "${GGML_CUDA_TP_OVERLAP_BF16:-1}"
+      LLAMA_CACHE: /home/llama/.cache/huggingface/mi60-router
+      LLAMA_ARG_OFFLINE: "1"
     volumes:
-      - ${HF_CACHE:-/home/raistlin/.cache/huggingface}:/home/llama/.cache/huggingface
+      - ${HF_CACHE:-/home/raistlin/.cache/huggingface}:/home/llama/.cache/huggingface:ro
       - ${LLAMA_CACHE:-/home/raistlin/.cache/llama.cpp}:/home/llama/.cache/llama.cpp
       - ./live-monitored/llama-server-models.ini:/etc/mx-llama/models.ini:ro
     devices:

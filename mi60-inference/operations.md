@@ -20,14 +20,21 @@ Build a different local engine, then redeploy the stack in Dockge:
 ./scripts/redeploy-container
 ```
 
-Model catalog edits use the same deploy helper. Keep the documented four-model
-catalog, use `hf-repo` rather than direct GGUF paths, and leave KV-cache
-precision native. The helper recreates the owning Dockge stack and runs the
-health/model check:
+Model catalog edits use the same deploy helper. Keep the documented four weight
+sets and six profiles, use `hf-repo` rather than direct GGUF paths, and leave
+KV-cache precision native. Refresh the curated cache index first; production is
+offline and will never download missing model data:
 
 ```bash
+./scripts/prepare-mi60-router-cache
 ./scripts/redeploy-container
 ```
+
+The normal Hugging Face cache is retained for maintenance and experiments. The
+router sees only `~/.cache/huggingface/mi60-router`, which hard-links the four
+approved weight sets plus Qwen/Gemma projectors and Gemma's MTP sidecar. Use the
+aliases printed by `./scripts/check-container`; Qwen medium is the default, with
+xhigh and no-reasoning variants available.
 
 ## Useful telemetry
 

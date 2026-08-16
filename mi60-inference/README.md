@@ -11,7 +11,7 @@ and entries short.
 - Engine: custom `~/infer/mx-llama.cpp` build inside Docker.
 - Runtime: current TheRock nightly with `device-gfx906`.
 - Manager: Dockge stack `mi60-llamaswap`; API/UI at `http://localhost:8000`.
-- Main preset: `REC-qwen3.8-27b-q8_0-mtp2`, three slots sharing 261,888
+- Main profile: `qwen3.8-27b-q8_0-mtp2`, three slots sharing 261,888
   tokens, medium thinking, and MTP depth 2.
 - Models: persistent host Hugging Face cache mounted at the standard container
   cache path.

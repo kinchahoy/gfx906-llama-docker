@@ -1,0 +1,157 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Build a small Hugging Face cache index containing only the model weight sets
+# intentionally exposed by the MI60 router. Model blobs are hard-linked from
+# the normal cache, so this uses metadata space rather than another ~140 GB.
+
+hf_root=${HF_CACHE:-/home/raistlin/.cache/huggingface}
+source_cache=${HF_HUB_CACHE:-"${hf_root}/hub"}
+router_cache=${MI60_ROUTER_CACHE:-"${hf_root}/mi60-router"}
+
+[[ -d "${source_cache}" ]] || {
+    printf 'Hugging Face cache is not readable: %s\n' "${source_cache}" >&2
+    exit 1
+}
+
+case "${router_cache}" in
+    "${hf_root}"/*) ;;
+    *)
+        printf 'MI60_ROUTER_CACHE must be below HF_CACHE (%s): %s\n' \
+            "${hf_root}" "${router_cache}" >&2
+        exit 1
+        ;;
+esac
+
+stage=$(mktemp -d "${hf_root}/.mi60-router.XXXXXX")
+
+repo_path() {
+    printf '%s/models--%s\n' "${source_cache}" "${1//\//--}"
+}
+
+new_repo_path() {
+    printf '%s/models--%s\n' "${stage}" "${1//\//--}"
+}
+
+choose_cached_file() {
+    local repo=$1
+    local pattern=$2
+    local minimum_bytes=$3
+    local candidate size
+    local source_repo
+    source_repo=$(repo_path "${repo}")
+
+    while IFS= read -r candidate; do
+        [[ -n "${candidate}" ]] || continue
+        size=$(stat -Lc '%s' "${candidate}" 2>/dev/null || printf '0')
+        if (( size >= minimum_bytes )); then
+            printf '%s\n' "${candidate}"
+            return 0
+        fi
+    done < <(
+        find "${source_repo}/snapshots" -type l -iname "${pattern}" \
+            -printf '%T@ %p\n' 2>/dev/null | sort -nr | cut -d' ' -f2-
+    )
+
+    printf 'No complete cached file for %s matching %s (minimum %s bytes)\n' \
+        "${repo}" "${pattern}" "${minimum_bytes}" >&2
+    return 1
+}
+
+add_cached_file() {
+    local repo=$1
+    local revision=$2
+    local source_file=$3
+    local exposed_name=$4
+    local source_blob blob_name destination_repo destination_snapshot
+
+    source_blob=$(readlink -f -- "${source_file}")
+    [[ -f "${source_blob}" ]] || {
+        printf 'Cached blob is missing: %s\n' "${source_file}" >&2
+        return 1
+    }
+
+    blob_name=$(basename -- "${source_blob}")
+    destination_repo=$(new_repo_path "${repo}")
+    destination_snapshot=${destination_repo}/snapshots/${revision}
+    mkdir -p "${destination_repo}/blobs" "${destination_snapshot}"
+
+    if [[ ! -e "${destination_repo}/blobs/${blob_name}" ]]; then
+        ln -- "${source_blob}" "${destination_repo}/blobs/${blob_name}"
+    fi
+    ln -sfn -- "../../blobs/${blob_name}" "${destination_snapshot}/${exposed_name}"
+}
+
+set_main_ref() {
+    local repo=$1
+    local revision=$2
+    local destination_repo
+    destination_repo=$(new_repo_path "${repo}")
+    mkdir -p "${destination_repo}/refs"
+    printf '%s\n' "${revision}" > "${destination_repo}/refs/main"
+}
+
+snapshot_revision() {
+    basename -- "$(dirname -- "$1")"
+}
+
+qwen_repo=unsloth/Qwen3.8-27B-GGUF
+qwen_model=$(choose_cached_file "${qwen_repo}" 'Qwen3.8-27B-Q8_0.gguf' 25000000000)
+qwen_revision=$(snapshot_revision "${qwen_model}")
+qwen_mmproj=$(dirname -- "${qwen_model}")/mmproj-BF16.gguf
+[[ $(stat -Lc '%s' "${qwen_mmproj}" 2>/dev/null || printf '0') -ge 100000000 ]] || {
+    printf 'Qwen mmproj is missing or incomplete beside %s\n' "${qwen_model}" >&2
+    exit 1
+}
+add_cached_file "${qwen_repo}" "${qwen_revision}" "${qwen_model}" Qwen3.8-27B-Q8_0.gguf
+add_cached_file "${qwen_repo}" "${qwen_revision}" "${qwen_mmproj}" mmproj-BF16.gguf
+set_main_ref "${qwen_repo}" "${qwen_revision}"
+
+gemma_repo=unsloth/gemma-4-31B-it-GGUF
+gemma_model=$(choose_cached_file "${gemma_repo}" 'gemma-4-31B-it-Q8_0.gguf' 30000000000)
+gemma_revision=$(snapshot_revision "${gemma_model}")
+gemma_mmproj=$(dirname -- "${gemma_model}")/mmproj-BF16.gguf
+gemma_mtp=$(choose_cached_file "${gemma_repo}" '*MTP*.gguf' 100000000)
+[[ $(stat -Lc '%s' "${gemma_mmproj}" 2>/dev/null || printf '0') -ge 100000000 ]] || {
+    printf 'Gemma mmproj is missing or incomplete beside %s\n' "${gemma_model}" >&2
+    exit 1
+}
+add_cached_file "${gemma_repo}" "${gemma_revision}" "${gemma_model}" gemma-4-31B-it-Q8_0.gguf
+add_cached_file "${gemma_repo}" "${gemma_revision}" "${gemma_mmproj}" mmproj-BF16.gguf
+add_cached_file "${gemma_repo}" "${gemma_revision}" "${gemma_mtp}" mtp-gemma-4-31B-it-Q8_0.gguf
+set_main_ref "${gemma_repo}" "${gemma_revision}"
+
+gpt120_repo=ggml-org/gpt-oss-120b-GGUF
+gpt120_first=$(choose_cached_file "${gpt120_repo}" 'gpt-oss-120b-mxfp4-00001-of-00003.gguf' 10000000)
+gpt120_revision=$(snapshot_revision "${gpt120_first}")
+gpt120_snapshot=$(dirname -- "${gpt120_first}")
+gpt120_total=0
+for shard in 00001-of-00003 00002-of-00003 00003-of-00003; do
+    shard_file=${gpt120_snapshot}/gpt-oss-120b-mxfp4-${shard}.gguf
+    shard_size=$(stat -Lc '%s' "${shard_file}" 2>/dev/null || printf '0')
+    (( gpt120_total += shard_size ))
+    add_cached_file "${gpt120_repo}" "${gpt120_revision}" "${shard_file}" \
+        "gpt-oss-120b-mxfp4-${shard}.gguf"
+done
+(( gpt120_total >= 50000000000 )) || {
+    printf 'GPT-OSS 120B shard set is incomplete (%s bytes)\n' "${gpt120_total}" >&2
+    exit 1
+}
+set_main_ref "${gpt120_repo}" "${gpt120_revision}"
+
+gpt20_repo=ggml-org/gpt-oss-20b-GGUF
+gpt20_model=$(choose_cached_file "${gpt20_repo}" 'gpt-oss-20b-mxfp4.gguf' 10000000000)
+gpt20_revision=$(snapshot_revision "${gpt20_model}")
+add_cached_file "${gpt20_repo}" "${gpt20_revision}" "${gpt20_model}" gpt-oss-20b-mxfp4.gguf
+set_main_ref "${gpt20_repo}" "${gpt20_revision}"
+
+if [[ -e "${router_cache}" ]]; then
+    backup=${router_cache}.backup-$(date +%Y%m%d-%H%M%S)
+    [[ ! -e "${backup}" ]] || backup=${backup}-${BASHPID}
+    mv -- "${router_cache}" "${backup}"
+    printf 'Previous curated cache metadata moved to %s\n' "${backup}"
+fi
+mv -- "${stage}" "${router_cache}"
+
+printf 'Prepared offline MI60 router cache at %s\n' "${router_cache}"
+printf 'Weight sets: Qwen3.8 27B Q8_0, Gemma 4 31B-it Q8_0, GPT-OSS 120B MXFP4, GPT-OSS 20B MXFP4\n'

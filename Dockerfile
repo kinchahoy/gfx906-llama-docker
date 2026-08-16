@@ -92,4 +92,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=5 \
   CMD curl -fsS http://127.0.0.1:8000/health || exit 1
 
 ENTRYPOINT ["/usr/bin/tini", "--", "/opt/mx-llama/bin/llama-server"]
-CMD ["--host", "0.0.0.0", "--port", "8000", "--models-preset", "/etc/mx-llama/models.ini", "--models-max", "1", "--models-autoload"]
+CMD ["--host", "0.0.0.0", "--port", "8000", "--offline", "--models-preset", "/etc/mx-llama/models.ini", "--models-max", "1", "--models-autoload"]
