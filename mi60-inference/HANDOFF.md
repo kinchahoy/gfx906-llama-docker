@@ -4,11 +4,12 @@
 
 - The production Docker container is intentionally stopped while the new
   Qwen context profile is staged.
-- Qwen3.8-27B Q8_0 is configured for three slots sharing a 288,000-token
+- Qwen3.8-27B Q8_0 is configured for three slots sharing a 368,640-token
   unified KV pool; medium thinking and official samplers are defaults.
 - The staged profile passed target + MTP + GPU mmproj loading and three
-  concurrent requests with native-precision KV. It left about 1.21 GiB free on
-  GPU0 and 2.33 GiB on GPU1. See
+  concurrent requests with native-precision KV at batch 2048 / ubatch 1024. It
+  left about 1.0 GiB free on GPU0 after that check and 825 MiB after the long
+  benchmark. See
   [the unified-context run](runs/2026-08-16-qwen38-unified-context/README.md).
 - The fixed-100%-fan matrix is complete. `225/160`, `160/160`, and `225/145 W`
   all reached the 95 C cutoff in both prescribed long workloads.

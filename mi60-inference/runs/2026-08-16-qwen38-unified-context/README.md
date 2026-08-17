@@ -40,10 +40,35 @@ Higher fixed-setting attempts failed before serving: 400,128, 450,048, and
 change graph workspace, but those are not context controls and doing so was
 outside this test: the required tuned 2048/2048 values remained fixed.
 
+## Ubatch 1024 follow-up
+
+The same stack was retested with logical batch held at 2048 and only ubatch
+reduced to 1024. This changes physical graph workspace, not unified-context
+semantics.
+
+| Batch / ubatch | Unified context | GPU0 used | GPU1 used | GPU0 free | Result |
+| ---: | ---: | ---: | ---: | ---: | --- |
+| 2048 / 1024 | 325,120 | 31,262,539,776 B | 30,060,859,392 B | 2,937.7 MiB | Full GPU load passed |
+| 2048 / 1024 | 368,640 | 33,272,406,016 B | 32,070,590,464 B | 1,021.0 MiB | Three concurrent requests passed |
+| 2048 / 1024 | 384,000 | 33,916,641,280 B | 32,714,964,992 B | 406.6 MiB | Full GPU load passed; margin too tight |
+| 2048 / 1024 | 400,128 | 34,248,560,640 B | 33,442,992,128 B | 90.0 MiB | Server started, but GPU mmproj graph allocation failed |
+
+At 400,128, reducing logical batch to 1024 produced essentially identical VRAM
+use and the same failed 248.10 MiB GPU mmproj graph allocation. Logical batch
+therefore remains 2048.
+
+The selected 368,640 run also completed the established 995-token prompt and
+1,024-token output benchmark at 193.13 prompt tok/s and 30.68 generation tok/s,
+with 596 of 853 draft tokens accepted. The earlier ubatch-2048 reference was
+202.88 prompt tok/s and 30.04 generation tok/s. These are single runs, but they
+show no material generation-rate penalty; prompt processing was 4.8% lower.
+After this longer request, GPU0 had 825 MiB free and GPU1 had 1,899 MiB free.
+
 ## Decision
 
-Use 288,000. It gives any single slot access to more than 200K tokens when the
-shared pool is available, passes three-way concurrency, and preserves roughly
-twice GPU0's margin at 300,032. It does not allow three simultaneous 200K
+Use batch 2048, ubatch 1024, and 368,640 unified context. It gives any single
+slot access to more than 200K tokens when the shared pool is available, passes
+three-way concurrency and the long benchmark, and retains a practical GPU0
+margin. It does not allow three simultaneous 200K
 contexts; that would require at least a 600K shared pool, which does not fit
 with this model, MTP, GPU mmproj, native KV, and the fixed performance settings.

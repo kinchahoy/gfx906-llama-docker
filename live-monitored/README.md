@@ -7,9 +7,9 @@ The catalog contains four cached weight sets and six selectable profiles:
 
 | Request ID | Thinking | Context / parallelism |
 | --- | --- | --- |
-| `qwen3.8-27b-q8_0-mtp2` | medium (default) | 288,000 unified / 3 |
-| `qwen3.8-27b-q8_0-mtp2-xhigh` | xhigh | 288,000 unified / 3 |
-| `qwen3.8-27b-q8_0-mtp2-no-reasoning` | off | 288,000 unified / 3 |
+| `qwen3.8-27b-q8_0-mtp2` | medium (default) | 368,640 unified / 3 |
+| `qwen3.8-27b-q8_0-mtp2-xhigh` | xhigh | 368,640 unified / 3 |
+| `qwen3.8-27b-q8_0-mtp2-no-reasoning` | off | 368,640 unified / 3 |
 | `gemma-4-31b-it-q8_0-mtp2` | on | 235,008 / 3 |
 | `gpt-oss-120b-mxfp4-2x50k` | model default | 100,000 / 2 |
 | `gpt-oss-20b-mxfp4-3x150k-tuned` | model default | 150,000 / 3 |
@@ -33,9 +33,9 @@ top-k 20, min-p 0, presence penalty 0, and repeat penalty 1.0 for both medium
 and xhigh.
 
 Qwen and Gemma use Unsloth Q8_0, tensor parallelism across `ROCm0,ROCm1`,
-direct I/O, 2048 batch/ubatch, MTP depth 2, and three parallel slots. Qwen uses
-a 288,000-token unified KV pool. Each Qwen slot can grow as far as the model's
-262,144-token training limit when the shared pool has room; three simultaneous
+direct I/O, MTP depth 2, and three parallel slots. Qwen uses logical batch 2048,
+ubatch 1024, and a 368,640-token unified KV pool. Each Qwen slot can grow as far
+as the model's 262,144-token training limit when the shared pool has room; three simultaneous
 200K conversations would still require at least 600K total capacity. Gemma uses
 235,008 (78,336 per slot) and keeps mmproj
 enabled on CPU; in the measured 261,888-token Gemma attempt the target plus MTP
@@ -44,10 +44,12 @@ profiles retain their measured, non-obvious settings exactly; their lower
 context/concurrency values are deliberate VRAM/performance choices.
 
 The Qwen pool was selected with target weights, integrated MTP, mmproj, and
-native-precision KV all resident on the GPUs. At fixed 2048 batch/ubatch,
-312,320 loaded but left only 77.7 MiB free on GPU0; 300,032 left 619.6 MiB;
-288,000 left 1,241 MiB and passed three concurrent requests. Total VRAM usage
-grew approximately linearly at about 100--106 KiB per added context token.
+native-precision KV all resident on the GPUs. Ubatch 1024 substantially reduces
+graph workspace while keeping logical batch at 2048. A 384,000 pool loaded but
+left only 406.6 MiB free on GPU0; 400,128 left only 90 MiB and failed a 248 MiB
+GPU mmproj graph allocation. The selected 368,640 pool passed three concurrent
+requests plus the standard 995-token/1,024-output benchmark. It left 1,021 MiB
+free after the concurrency check and 825 MiB after the long benchmark.
 Measurements and failed upper-bound tests are recorded in
 [`../mi60-inference/runs/2026-08-16-qwen38-unified-context/README.md`](../mi60-inference/runs/2026-08-16-qwen38-unified-context/README.md).
 

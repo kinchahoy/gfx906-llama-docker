@@ -68,12 +68,12 @@ uses the repository Compose file, then runs the container health check.
 
 `qwen3.8-27b-q8_0-mtp2` mirrors the validated two-MI60 launch in
 `~/infer/QWEN38_GFX906_QUICKSTART.md`: Hugging Face Q8_0, tensor split, direct I/O,
-2048 batch/ubatch, and integrated MTP speculative decoding at depth 2. The
-Docker preset uses a 288,000-token unified KV pool shared dynamically by three
-parallel request slots. Any one slot can grow to the model's native 262,144-token
+2048 logical batch, 1024 ubatch, and integrated MTP speculative decoding at
+depth 2. The Docker preset uses a 368,640-token unified KV pool shared
+dynamically by three parallel request slots. Any one slot can grow to the model's native 262,144-token
 limit while aggregate active context stays within the shared pool; this does
 not provide three simultaneous 200K conversations. The selected size passed a
-three-slot concurrency check with about 1.21 GiB free on the tighter GPU0. The
+three-slot concurrency check with about 1.0 GiB free on the tighter GPU0. The
 live catalog always uses `hf-repo`; direct model paths and `-m` are prohibited unless
 the operator explicitly approves an exception. Its runtime environment enables internal all-reduce and the private
 gfx906 PP2048 overlap optimization. BF16 overlap transport is faster but is a
