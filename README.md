@@ -69,11 +69,12 @@ uses the repository Compose file, then runs the container health check.
 `qwen3.8-27b-q8_0-mtp2` mirrors the validated two-MI60 launch in
 `~/infer/QWEN38_GFX906_QUICKSTART.md`: Hugging Face Q8_0, tensor split, direct I/O,
 2048 batch/ubatch, and integrated MTP speculative decoding at depth 2. The
-Docker preset expands the guide's benchmark context to a native 256K total
-pool shared by three parallel request slots. It allocates 261,888 tokens—the
-largest three-way/256-token-aligned value below 262,144—providing 87,296 tokens
-per slot without llama.cpp rounding above the model's native limit. The live
-catalog always uses `hf-repo`; direct model paths and `-m` are prohibited unless
+Docker preset uses a 288,000-token unified KV pool shared dynamically by three
+parallel request slots. Any one slot can grow to the model's native 262,144-token
+limit while aggregate active context stays within the shared pool; this does
+not provide three simultaneous 200K conversations. The selected size passed a
+three-slot concurrency check with about 1.21 GiB free on the tighter GPU0. The
+live catalog always uses `hf-repo`; direct model paths and `-m` are prohibited unless
 the operator explicitly approves an exception. Its runtime environment enables internal all-reduce and the private
 gfx906 PP2048 overlap optimization. BF16 overlap transport is faster but is a
 small precision tradeoff; set `GGML_CUDA_TP_OVERLAP=0` and
@@ -88,8 +89,8 @@ penalty 1.0. Clients can override medium with
 
 Gemma keeps the same Q8/tensor-parallel/MTP/three-slot approach, with a tested
 235,008-token pool and its mmproj enabled on CPU. Those two fit adjustments are
-required because Gemma's larger target, MTP sidecar, and GPU projector do not
-fit together at Qwen's 261,888-token envelope with native-precision KV.
+required because Gemma's larger target, MTP sidecar, and GPU projector did not
+fit together in the measured 261,888-token attempt with native-precision KV.
 
 ## Dockge on mi60-server
 
