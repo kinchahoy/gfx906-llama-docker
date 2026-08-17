@@ -11,6 +11,12 @@
   left about 1.0 GiB free on GPU0 after that check and 825 MiB after the long
   benchmark. See
   [the unified-context run](runs/2026-08-16-qwen38-unified-context/README.md).
+- Gemma 4 31B-it Q8_0 now uses batch 2048, ubatch 1024, three slots, and a
+  235,008-token unified pool. Target, HF-mapped MTP, mmproj, and native KV are
+  GPU-resident. It passed three concurrent requests with 756 MiB free on GPU0
+  and the long benchmark with 670 MiB free, above the operator-approved
+  half-GiB buffer. See
+  [the Gemma unified-context run](runs/2026-08-16-gemma4-unified-context/README.md).
 - The fixed-100%-fan matrix is complete. `225/160`, `160/160`, and `225/145 W`
   all reached the 95 C cutoff in both prescribed long workloads.
 - The equal-power run showed about 4 C more edge rise on GPU1 at the same

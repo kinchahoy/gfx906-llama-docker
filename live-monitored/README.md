@@ -10,7 +10,7 @@ The catalog contains four cached weight sets and six selectable profiles:
 | `qwen3.8-27b-q8_0-mtp2` | medium (default) | 368,640 unified / 3 |
 | `qwen3.8-27b-q8_0-mtp2-xhigh` | xhigh | 368,640 unified / 3 |
 | `qwen3.8-27b-q8_0-mtp2-no-reasoning` | off | 368,640 unified / 3 |
-| `gemma-4-31b-it-q8_0-mtp2` | on | 235,008 / 3 |
+| `gemma-4-31b-it-q8_0-mtp2` | on | 235,008 unified / 3 |
 | `gpt-oss-120b-mxfp4-2x50k` | model default | 100,000 / 2 |
 | `gpt-oss-20b-mxfp4-3x150k-tuned` | model default | 150,000 / 3 |
 
@@ -37,9 +37,9 @@ direct I/O, MTP depth 2, and three parallel slots. Qwen uses logical batch 2048,
 ubatch 1024, and a 368,640-token unified KV pool. Each Qwen slot can grow as far
 as the model's 262,144-token training limit when the shared pool has room; three simultaneous
 200K conversations would still require at least 600K total capacity. Gemma uses
-235,008 (78,336 per slot) and keeps mmproj
-enabled on CPU; in the measured 261,888-token Gemma attempt the target plus MTP
-exhausted GPU0, while GPU mmproj offload needed another 1.15 GiB. The GPT-OSS
+the same batch 2048, ubatch 1024, unified-KV, tensor-parallel approach with a
+235,008-token shared pool. Its target, HF-mapped MTP sidecar, mmproj, and native
+KV all remain GPU-resident. The GPT-OSS
 profiles retain their measured, non-obvious settings exactly; their lower
 context/concurrency values are deliberate VRAM/performance choices.
 
@@ -52,6 +52,13 @@ requests plus the standard 995-token/1,024-output benchmark. It left 1,021 MiB
 free after the concurrency check and 825 MiB after the long benchmark.
 Measurements and failed upper-bound tests are recorded in
 [`../mi60-inference/runs/2026-08-16-qwen38-unified-context/README.md`](../mi60-inference/runs/2026-08-16-qwen38-unified-context/README.md).
+
+Gemma also benefited from ubatch 1024. The selected 235,008-token unified pool
+completed three concurrent requests and the long benchmark at 189.95 prompt
+tok/s and 30.98 generation tok/s. It retained 756 MiB on GPU0 after concurrency
+and 670 MiB after the long run, meeting the operator-approved half-GiB buffer.
+See
+[`../mi60-inference/runs/2026-08-16-gemma4-unified-context/README.md`](../mi60-inference/runs/2026-08-16-gemma4-unified-context/README.md).
 
 Do not add `cache-type-*` options unless intentionally changing KV precision.
 No cache type is configured, so target and draft KV use llama.cpp's native

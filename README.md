@@ -87,10 +87,10 @@ temperature 1.0, top-p 0.95, top-k 20, min-p 0, presence penalty 0, and repeat
 penalty 1.0. Clients can override medium with
 `chat_template_kwargs.reasoning_effort=xhigh` without changing profiles.
 
-Gemma keeps the same Q8/tensor-parallel/MTP/three-slot approach, with a tested
-235,008-token pool and its mmproj enabled on CPU. Those two fit adjustments are
-required because Gemma's larger target, MTP sidecar, and GPU projector did not
-fit together in the measured 261,888-token attempt with native-precision KV.
+Gemma keeps the same Q8/tensor-parallel/MTP/three-slot approach, logical batch
+2048, ubatch 1024, and unified KV. Its tested 235,008-token pool keeps the
+target, HF-mapped MTP sidecar, mmproj, and native-precision KV on the GPUs while
+allowing any one slot to exceed 200K when the shared pool is available.
 
 ## Dockge on mi60-server
 
