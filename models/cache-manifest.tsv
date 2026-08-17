@@ -1,0 +1,12 @@
+# repo<TAB>group@minimum-total-bytes<TAB>snapshot-file-pattern<TAB>minimum-file-bytes<TAB>exposed-name
+# Add one row for every artifact that must be present in the offline router cache.
+# Rows sharing a repo are required to come from the same Hugging Face snapshot.
+unsloth/Qwen3.8-27B-GGUF	qwen@0	Qwen3.8-27B-Q8_0.gguf	25000000000	Qwen3.8-27B-Q8_0.gguf
+unsloth/Qwen3.8-27B-GGUF	qwen@0	mmproj-BF16.gguf	100000000	mmproj-BF16.gguf
+unsloth/gemma-4-31B-it-GGUF	gemma@0	gemma-4-31B-it-Q8_0.gguf	30000000000	gemma-4-31B-it-Q8_0.gguf
+unsloth/gemma-4-31B-it-GGUF	gemma@0	mmproj-BF16.gguf	100000000	mmproj-BF16.gguf
+unsloth/gemma-4-31B-it-GGUF	gemma@0	*MTP*.gguf	100000000	mtp-gemma-4-31B-it-Q8_0.gguf
+ggml-org/gpt-oss-120b-GGUF	gpt120@50000000000	gpt-oss-120b-mxfp4-00001-of-00003.gguf	10000000	gpt-oss-120b-mxfp4-00001-of-00003.gguf
+ggml-org/gpt-oss-120b-GGUF	gpt120@50000000000	gpt-oss-120b-mxfp4-00002-of-00003.gguf	10000000	gpt-oss-120b-mxfp4-00002-of-00003.gguf
+ggml-org/gpt-oss-120b-GGUF	gpt120@50000000000	gpt-oss-120b-mxfp4-00003-of-00003.gguf	10000000	gpt-oss-120b-mxfp4-00003-of-00003.gguf
+ggml-org/gpt-oss-20b-GGUF	gpt20@0	gpt-oss-20b-mxfp4.gguf	10000000000	gpt-oss-20b-mxfp4.gguf

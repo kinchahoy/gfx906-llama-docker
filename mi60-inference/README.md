@@ -8,11 +8,12 @@ and entries short.
 
 - GPUs: gfx906 card at `03:00.0` (210 W operator-selected production cap) plus
   gfx906 card at `87:00.0` (170 W selected cap; 178 W firmware maximum).
-- Engine: custom `~/infer/mx-llama.cpp` build inside Docker.
-- Runtime: current TheRock nightly with `device-gfx906`.
+- Engine: custom `llama-server` build 10279 (`46b95d97e`), from the external
+  gfx906-optimized `mx-llama.cpp` checkout.
+- Runtime: TheRock `10.1.0a20260815` with `device-gfx906`.
 - Manager: Dockge stack `mi60-llamaswap`; API/UI at `http://localhost:8000`.
-- Main profile: `qwen3.8-27b-q8_0-mtp2`, three slots sharing 261,888
-  tokens, medium thinking, and MTP depth 2.
+- Main profile: `qwen3.8-27b-q8_0-mtp2`, three slots sharing 368,640 unified
+  tokens, medium thinking, MTP depth 2, batch 2048, and ubatch 1024.
 - Models: persistent host Hugging Face cache mounted at the standard container
   cache path.
 
@@ -20,6 +21,10 @@ See [operations.md](operations.md) for the few commands worth remembering and
 [thermal-power.md](thermal-power.md) for cooling, clocks, and measured results.
 The operations guide also documents a time-limited, narrowly scoped lab grant
 for autonomous fan and power-cap testing.
+
+When recording a new benchmark, include the engine/runtime provenance shown by
+`./scripts/check-container`; the version strings above are the last recorded
+production run, not a promise that future `latest` builds will match them.
 
 For a fresh working context, start with [HANDOFF.md](HANDOFF.md).
 

@@ -20,6 +20,20 @@ Build a different local engine, then redeploy the stack in Dockge:
 ./scripts/redeploy-container
 ```
 
+Before recording an engine or flag experiment, capture the versions actually
+running in the container:
+
+```bash
+./scripts/check-container
+docker exec gfx906-llama-docker sh -lc 'cat /opt/therock/VERSION'
+docker image inspect kinchahoy/gfx906-llama-docker:latest \
+  --format 'image={{.Id}} created={{.Created}} labels={{json .Config.Labels}}'
+```
+
+Copy the llama-server version, TheRock version, image ID, and source-build
+revision into the run note. The host build directory is intentionally external
+so a specialized gfx906 fork can be swapped in with `./scripts/build-image`.
+
 Model catalog edits use the same deploy helper. Keep the documented four weight
 sets and six profiles, use `hf-repo` rather than direct GGUF paths, and leave
 KV-cache precision native. Refresh the curated cache index first; production is
@@ -29,6 +43,14 @@ offline and will never download missing model data:
 ./scripts/prepare-mi60-router-cache
 ./scripts/redeploy-container
 ```
+
+To add a cached model artifact, edit
+`models/cache-manifest.tsv` (repository, snapshot pattern, minimum file size,
+and exposed filename), add its profile to
+`live-monitored/llama-server-models.ini`, then run the two commands above.
+Rows for one repository are selected from one snapshot, and group minimums
+protect sharded models. This keeps model onboarding out of the cache-preparer
+shell code.
 
 The normal Hugging Face cache is retained for maintenance and experiments. The
 router sees only `~/.cache/huggingface/mi60-router`, which hard-links the four

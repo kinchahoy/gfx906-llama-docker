@@ -78,6 +78,11 @@ downloads. The router does not scan it directly. Instead it uses the curated
 Consequently, a request cannot silently download a model and only the four
 approved weight sets appear in the router.
 
+The artifact list and minimum-size rules live in
+[`../models/cache-manifest.tsv`](../models/cache-manifest.tsv). Add a model's
+cached weight, projector, or MTP companion there before adding its `hf-repo`
+profile below; artifacts for one repository are selected from one snapshot.
+
 Build or refresh that index from complete files already in the normal cache:
 
 ```bash
